@@ -14,7 +14,7 @@ const PixelRiver = () => {
       60, // Field of view (larger = wider view)
       window.innerWidth / window.innerHeight,
       0.1, // Near clipping plane
-      5000 // Far clipping plane (render distance)
+      600 // Far clipping plane (render distance)
     );
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 
@@ -53,44 +53,36 @@ const PixelRiver = () => {
     instancedMesh.frustumCulled = false;
     scene.add(instancedMesh);
 
-    // Particle data
+    // Particle data for ring
     interface ParticleData {
       offset: number;
-      startPos: THREE.Vector3;
-      controlPoint1: THREE.Vector3;
-      controlPoint2: THREE.Vector3;
-      endPos: THREE.Vector3;
+      radius: number; // Distance from center
+      orbitSpeed: number; // Speed of rotation
+      verticalOffset: number; // Slight vertical variation
       axis: THREE.Vector3;
       angle: number;
-      color: THREE.Color;
     }
 
     const particles: ParticleData[] = [];
 
-    // Initialize particles
+    // Ring parameters
+    const ringInnerRadius = 500;
+    const ringOuterRadius = 900;
+    
+    // Initialize particles in ring formation
     for (let i = 0; i < particleCount; i++) {
-      const offset = (i / particleCount) * duration;
+      const offset = (i / particleCount) * Math.PI * 2; // Angle around the ring
       
-      // Start position (left side)
-      const startPos = new THREE.Vector3(100, -1, -5000);
+      // Random radius within ring width
+      const radius = THREE.MathUtils.randFloat(ringInnerRadius, ringOuterRadius);
       
-      // End position (right side)
-      const endPos = new THREE.Vector3(200, -1, 700);
+      // Orbit speed (slightly randomized for natural flow)
+      const orbitSpeed = THREE.MathUtils.randFloat(0.8, 1.2);
       
-      // Control points for bezier curve
-      const controlPoint1 = new THREE.Vector3(
-        THREE.MathUtils.randFloat(-1000, -500),
-        1,//THREE.MathUtils.randFloat(800, 800),
-        THREE.MathUtils.randFloat(600, 1400)
-      );
+      // Slight vertical variation for depth
+      const verticalOffset = THREE.MathUtils.randFloat(-5, 5);
       
-      const controlPoint2 = new THREE.Vector3(
-        THREE.MathUtils.randFloat(100, 1400),
-        -1,//THREE.MathUtils.randFloat(-200, -300),
-        THREE.MathUtils.randFloat(-1600, -400)
-      );
-      
-      // Rotation axis and angle
+      // Rotation axis and angle for cube spinning
       const axis = new THREE.Vector3(
         THREE.MathUtils.randFloatSpread(2),
         THREE.MathUtils.randFloatSpread(2),
@@ -99,60 +91,14 @@ const PixelRiver = () => {
       
       const angle = Math.PI * THREE.MathUtils.randInt(16, 32);
       
-      // Various shades of blue
-      const color = new THREE.Color();
-      const blueVariant = Math.random();
-      
-      if (blueVariant < 0.3) {
-        // Vibrant blue - rgb(15, 178, 242) range
-        color.setRGB(
-          THREE.MathUtils.randFloat(10 / 255, 30 / 255),  // 15-30 / 255
-          THREE.MathUtils.randFloat(120 / 255, 140 / 255),  // 165-190 / 255
-          THREE.MathUtils.randFloat(230 / 255, 255 / 255)   // 230-250 / 255
-        );
-      } else if (blueVariant < 0.6) {
-        // Cyan/light blue
-        color.setRGB(
-          THREE.MathUtils.randFloat(0.2, 0.4),
-          THREE.MathUtils.randFloat(0.7, 0.9),
-          THREE.MathUtils.randFloat(0.9, 1.0)
-        );
-      } else {
-        // Bright sky blue
-        color.setRGB(
-          THREE.MathUtils.randFloat(0.3, 0.5),
-          THREE.MathUtils.randFloat(0.8, 0.95),
-          THREE.MathUtils.randFloat(0.95, 1.0)
-        );
-      }
-
-      
       particles.push({
         offset,
-        startPos,
-        controlPoint1,
-        controlPoint2,
-        endPos,
+        radius,
+        orbitSpeed,
+        verticalOffset,
         axis,
         angle,
-        color
       });
-    }
-
-    // Cubic bezier function
-    function cubicBezier(
-      p0: THREE.Vector3,
-      c0: THREE.Vector3,
-      c1: THREE.Vector3,
-      p1: THREE.Vector3,
-      t: number
-    ): THREE.Vector3 {
-      const tn = 1 - t;
-      return new THREE.Vector3(
-        tn * tn * tn * p0.x + 3 * tn * tn * t * c0.x + 3 * tn * t * t * c1.x + t * t * t * p1.x,
-        tn * tn * tn * p0.y + 3 * tn * tn * t * c0.y + 3 * tn * t * t * c1.y + t * t * t * p1.y,
-        tn * tn * tn * p0.z + 3 * tn * tn * t * c0.z + 3 * tn * t * t * c1.z + t * t * t * p1.z
-      );
     }
 
     // Quaternion from axis angle
@@ -170,11 +116,12 @@ const PixelRiver = () => {
         return THREE.MathUtils.randFloatSpread(1) * 1 + 4;
     }
 
-    // Create and position the ship
+    // Create and position the ship on the ring
     const shipGroup = createPirateShip();
-    shipGroup.position.set(300, 100, 100);
-    shipGroup.scale.set(3, 3, 3);
-    shipGroup.rotation.y = 10 * Math.PI / 16; // Rotate 90 degrees to face along the river
+    shipGroup.position.set(250, 100, 300);
+    shipGroup.scale.set(3, 4, 3);
+    // Rotate ship to face along the ring's tangent
+    shipGroup.rotation.y = 8 * Math.PI / 16;
     scene.add(shipGroup);
 
     // Add dedicated light for the ship to make it brighter
@@ -195,27 +142,23 @@ const PixelRiver = () => {
     function animate() {
       animationId = requestAnimationFrame(animate);
 
-      // Update particles
+      // Update particles in ring formation
       for (let i = 0; i < particleCount; i++) {
         const particle = particles[i];
         
-        // Calculate progress with time offset
-        const tProgress = ((time + particle.offset) % duration) / duration;
+        // Calculate current angle around the ring
+        const currentAngle = particle.offset + (time * particle.orbitSpeed * 0.5);
         
-        // Position along bezier curve
-        position.copy(
-          cubicBezier(
-            particle.startPos,
-            particle.controlPoint1,
-            particle.controlPoint2,
-            particle.endPos,
-            tProgress
-          )
+        // Position in circular orbit
+        position.set(
+          Math.cos(currentAngle) * particle.radius - 400,
+          particle.verticalOffset,
+          Math.sin(currentAngle) * particle.radius + 400
         );
         
-        // Rotation based on progress
-        const currentAngle = particle.angle * tProgress;
-        rotation.copy(quatFromAxisAngle(particle.axis, currentAngle));
+        // Rotation based on time
+        const spinAngle = particle.angle * (time / duration);
+        rotation.copy(quatFromAxisAngle(particle.axis, spinAngle));
         
         // Update matrix
         matrix.compose(position, rotation, scale);
@@ -225,7 +168,7 @@ const PixelRiver = () => {
       instancedMesh.instanceMatrix.needsUpdate = true;
 
       // Animate ship (gentle bobbing)
-      shipGroup.position.y = -10 + Math.sin(time * 2) * 2 + 45;
+      shipGroup.position.y = -10 + Math.sin(time * 2) * 2 + 50;
 
       time += timeStep;
       time %= duration;
