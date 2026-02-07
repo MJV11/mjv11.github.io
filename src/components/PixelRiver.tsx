@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { createPirateShip } from './PirateShip';
+import { createIsland } from './Island';
 
 const PixelRiver = () => {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -129,6 +130,17 @@ const PixelRiver = () => {
     shipLight.position.set(300, 150, 100);
     scene.add(shipLight);
 
+    // Create and position the island in center-left
+    const islandGroup = createIsland();
+    islandGroup.position.set(-200, 30, 375);
+    islandGroup.scale.set(3, 3, 3);
+    scene.add(islandGroup);
+
+    // Add dedicated light for the island to make it visible
+    const islandLight = new THREE.PointLight(0xffffff, 6, 500);
+    islandLight.position.set(-200, 150, 200);
+    scene.add(islandLight);
+
     // Animation
     let time = 0;
     const timeStep = 1 / 60;
@@ -201,6 +213,16 @@ const PixelRiver = () => {
       
       // Dispose ship geometries and materials
       shipGroup.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          if (object.material instanceof THREE.Material) {
+            object.material.dispose();
+          }
+        }
+      });
+
+      // Dispose island geometries and materials
+      islandGroup.traverse((object) => {
         if (object instanceof THREE.Mesh) {
           object.geometry.dispose();
           if (object.material instanceof THREE.Material) {
