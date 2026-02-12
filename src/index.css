@@ -2,11 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Tusker Grotesk';
+  src: url('/fonts/TuskerGrotesk-2500Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-tusker {
+  font-family: 'Tusker Grotesk', sans-serif;
+}
+
+.font-google-sans-code {
+  font-family: 'Google Sans Code', monospace;
+}
+
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-  background: #fff;
+  margin: 0;
+  background-color: #f5eee6;
 }
 
 #root {
