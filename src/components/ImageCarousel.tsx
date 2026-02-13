@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import gsap from 'gsap'
-import { usePhoto } from '../contexts/PhotoContext'
+import { PiCaretRightBold, PiCaretLeftBold } from 'react-icons/pi'
+import { CornerBorders } from '../utils'
 import { createScene, totalDuration, TRANSITION_DURATION } from '../utils/slideTransition'
 
 function loadImage(
@@ -14,22 +15,30 @@ function loadImage(
   loader.load(url, onLoad, undefined, onError)
 }
 
-export const PhotoBackground = () => {
+interface ImageCarouselProps {
+  images: string[]
+  className?: string
+  /** Optional: control size. Defaults to a large viewport so the slide effect is fully visible. */
+  sizeClassName?: string
+}
+
+export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw] min-w-[280px] h-[75vh] min-h-[320px]' }: ImageCarouselProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<ReturnType<typeof createScene> | null>(null)
-  const displayedIndexRef = useRef<number | null>(null)
-  const activeTimelineRef = useRef<gsap.core.Timeline | null>(null)
+  const displayedIndexRef = useRef<number>(0)
+  const settledImageRef = useRef<HTMLImageElement | null>(null)
   const pendingIndexRef = useRef<number | null>(null)
   const isTransitioningRef = useRef(false)
   const isReadyRef = useRef(false)
   const mountedRef = useRef(false)
   const transitionIdRef = useRef(0)
   const initLoadIdRef = useRef(0)
+  const activeTimelineRef = useRef<gsap.core.Timeline | null>(null)
   const nextTransitionRafRef = useRef<number | null>(null)
-  const settledImageRef = useRef<HTMLImageElement | null>(null)
-  const { currentImage, currentIndex, images } = usePhoto()
 
-  const runNextTransitionRef = useRef<() => void>(() => {})
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  const runNextTransitionRef = useRef<() => void>(() => { })
 
   const scheduleRunNext = () => {
     if (nextTransitionRafRef.current !== null) {
@@ -52,8 +61,8 @@ export const PhotoBackground = () => {
       pendingIndexRef.current = null
       return
     }
-    const nextImage = images[nextIndex]
-    if (!nextImage) {
+    const nextImageUrl = images[nextIndex]
+    if (!nextImageUrl) {
       pendingIndexRef.current = null
       return
     }
@@ -62,7 +71,7 @@ export const PhotoBackground = () => {
     transitionIdRef.current += 1
     const transitionId = transitionIdRef.current
 
-    loadImage(nextImage, (img) => {
+    loadImage(nextImageUrl, (img) => {
       if (!mountedRef.current || !sceneRef.current || transitionId !== transitionIdRef.current) {
         isTransitioningRef.current = false
         return
@@ -94,19 +103,27 @@ export const PhotoBackground = () => {
         },
       })
 
-      tl.to(outProxy, {
-        t: totalDuration,
-        duration: TRANSITION_DURATION,
-        ease: 'none',
-        onUpdate: () => currentScene.slideOut.setTime(outProxy.t),
-      }, 0)
+      tl.to(
+        outProxy,
+        {
+          t: totalDuration,
+          duration: TRANSITION_DURATION,
+          ease: 'none',
+          onUpdate: () => currentScene.slideOut.setTime(outProxy.t),
+        },
+        0
+      )
 
-      tl.to(inProxy, {
-        t: totalDuration,
-        duration: TRANSITION_DURATION,
-        ease: 'none',
-        onUpdate: () => currentScene.slideIn.setTime(inProxy.t),
-      }, 0)
+      tl.to(
+        inProxy,
+        {
+          t: totalDuration,
+          duration: TRANSITION_DURATION,
+          ease: 'none',
+          onUpdate: () => currentScene.slideIn.setTime(inProxy.t),
+        },
+        0
+      )
 
       activeTimelineRef.current = tl
     }, () => {
@@ -118,28 +135,34 @@ export const PhotoBackground = () => {
 
   useEffect(() => {
     const container = containerRef.current
-    if (!container || !currentImage) return
+    if (!container || !images.length) return
 
     mountedRef.current = true
     const scene = createScene(container)
     sceneRef.current = scene
 
+    const resizeObserver = new ResizeObserver(() => {
+      sceneRef.current?.resize()
+    })
+    resizeObserver.observe(container)
+
     initLoadIdRef.current += 1
     const initLoadId = initLoadIdRef.current
-    loadImage(currentImage, (img) => {
+    const firstUrl = images[0]
+    loadImage(firstUrl, (img) => {
       if (!mountedRef.current || initLoadId !== initLoadIdRef.current || !sceneRef.current) return
-      // Initial state: slideOut shows the first image, slideIn hidden.
       scene.slideOut.setImage(img)
       scene.slideOut.setTime(0)
       scene.slideIn.setTime(0)
       scene.slideIn.mesh.visible = false
       settledImageRef.current = img
-      displayedIndexRef.current = currentIndex
+      displayedIndexRef.current = 0
       isReadyRef.current = true
       runNextTransitionRef.current()
     })
 
     return () => {
+      resizeObserver.disconnect()
       mountedRef.current = false
       isReadyRef.current = false
       if (activeTimelineRef.current) {
@@ -162,7 +185,7 @@ export const PhotoBackground = () => {
 
   useEffect(() => {
     const scene = sceneRef.current
-    if (!scene || !currentImage) return
+    if (!scene || !images.length) return
 
     if (!isReadyRef.current) {
       pendingIndexRef.current = currentIndex
@@ -173,12 +196,38 @@ export const PhotoBackground = () => {
 
     pendingIndexRef.current = currentIndex
     runNextTransitionRef.current()
-  }, [currentIndex, currentImage])
+  }, [currentIndex, images])
+
+  const next = useCallback(() => {
+    setCurrentIndex((i) => (images.length ? (i + 1) % images.length : 0))
+  }, [images.length])
+
+  const prev = useCallback(() => {
+    setCurrentIndex((i) => (images.length ? (i - 1 + images.length) % images.length : 0))
+  }, [images.length])
+
+  if (!images.length) return null
 
   return (
-    <div
-      ref={containerRef}
-      className='fixed inset-0 w-screen h-screen overflow-hidden brightness-[0.8] z-0'
-    />
+    <div className={`flex h-full items-center justify-center ${className}`}>
+      <div className="flex flex-col items-center gap-3">
+        <div
+          ref={containerRef}
+          className={`relative overflow-hidden bg-transparent z-[-1] ${sizeClassName} shrink-0`}
+        />
+        <div className="relative flex flex-row items-center justify-center gap-3 p-[14px] -translate-y-[20vh]">
+          <CornerBorders className="w-4 h-4" />
+          <button onClick={prev} aria-label="Previous photo">
+            <PiCaretLeftBold size={24} className="text-white hover:text-[#f3dbc7]" />
+          </button>
+          <span className="text-white font-medium text-base tabular-nums">
+            {currentIndex + 1} / {images.length}
+          </span>
+          <button onClick={next} aria-label="Next photo">
+            <PiCaretRightBold size={24} className="text-white hover:text-[#f3dbc7]" />
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -1,3 +1,7 @@
 export * from './Nav'
+export * from './AboutPage'
 export * from './PhotoSwitcher'
 export * from './PhotoBackground'
+export * from './TextBackground'
+export * from './ImageCarousel'
+export * from './Bikes'
