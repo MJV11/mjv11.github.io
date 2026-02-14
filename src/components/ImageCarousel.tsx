@@ -20,9 +20,16 @@ interface ImageCarouselProps {
   className?: string
   /** Optional: control size. Defaults to a large viewport so the slide effect is fully visible. */
   sizeClassName?: string
+  /**
+   * Scale factor for the Three.js canvas relative to the visible area.
+   * Values > 1 make the canvas larger than the visible container (overflow is clipped),
+   * so the image appears at a more natural / full size instead of being shrunk.
+   * e.g. 2.5 means the canvas is 250 % of the visible area in each dimension.
+   */
+  canvasScale?: number
 }
 
-export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw] min-w-[280px] h-[75vh] min-h-[320px]' }: ImageCarouselProps) {
+export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw] min-w-[280px] h-[75vh] min-h-[320px]', canvasScale = 1 }: ImageCarouselProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<ReturnType<typeof createScene> | null>(null)
   const displayedIndexRef = useRef<number>(0)
@@ -77,6 +84,8 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
         return
       }
 
+      // slideOut is already visible with the settled image on the cloth.
+      // Prepare it for disassembly and set up slideIn with the new image.
       if (settledImageRef.current) {
         currentScene.slideOut.setImage(settledImageRef.current)
       }
@@ -95,6 +104,13 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
             isTransitioningRef.current = false
             return
           }
+
+          // Transition done — swap new image onto slideOut (the settled cloth)
+          currentScene.slideOut.setImage(img)
+          currentScene.slideOut.setTime(0)
+          currentScene.slideOut.mesh.visible = true
+          currentScene.slideIn.mesh.visible = false
+
           settledImageRef.current = img
           displayedIndexRef.current = nextIndex
           activeTimelineRef.current = null
@@ -151,8 +167,10 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
     const firstUrl = images[0]
     loadImage(firstUrl, (img) => {
       if (!mountedRef.current || initLoadId !== initLoadIdRef.current || !sceneRef.current) return
+      // slideOut at time=0 is the settled cloth-rippling image
       scene.slideOut.setImage(img)
       scene.slideOut.setTime(0)
+      scene.slideOut.mesh.visible = true
       scene.slideIn.setTime(0)
       scene.slideIn.mesh.visible = false
       settledImageRef.current = img
@@ -209,22 +227,26 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
   if (!images.length) return null
 
   return (
-    <div className={`flex h-full items-center justify-center ${className}`}>
+    <div className={`flex items-center justify-center ${className}`}>
       <div className="flex flex-col items-center gap-3">
-        <div
-          ref={containerRef}
-          className={`relative overflow-hidden bg-transparent z-[-1] ${sizeClassName} shrink-0`}
-        />
-        <div className="relative flex flex-row items-center justify-center gap-3 p-[14px] -translate-y-[20vh]">
+        {/* Visible area — clips the oversized canvas */}
+        <div className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0`}>
+          <div
+            ref={containerRef}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            style={{ width: `${canvasScale * 100}%`, height: `${canvasScale * 100}%` }}
+          />
+        </div>
+        <div className="relative flex flex-row items-center justify-center gap-3 p-[14px]">
           <CornerBorders className="w-4 h-4" />
           <button onClick={prev} aria-label="Previous photo">
-            <PiCaretLeftBold size={24} className="text-white hover:text-[#f3dbc7]" />
+            <PiCaretLeftBold size={24} className="text-[#1A4561] hover:text-[#E6B389]" />
           </button>
-          <span className="text-white font-medium text-base tabular-nums">
+          <span className="text-[#1A4561] font-medium text-base tabular-nums">
             {currentIndex + 1} / {images.length}
           </span>
           <button onClick={next} aria-label="Next photo">
-            <PiCaretRightBold size={24} className="text-white hover:text-[#f3dbc7]" />
+            <PiCaretRightBold size={24} className="text-[#1A4561] hover:text-[#E6B389]" />
           </button>
         </div>
       </div>

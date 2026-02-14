@@ -1,33 +1,39 @@
-import { CornerBorders } from "../utils"
+import { useNav } from '../contexts/NavContext'
 
 export const AboutPage = () => {
-    return (
-        <div className='absolute bottom-0 left-0 flex flex-col md:flex-row items-end justify-between w-full p-[14px]'>
-            <div className='relative flex flex-col items-start justify-end w-[420px] px-[14px] pt-[14px] '>
-                <span style={{ lineHeight: '.8', textShadow: '0px 0px 1px rgba(0, 0, 0, 0.1)' }} className="font-google-sans-code text-[#f3dbc7] text-center font-bold text-[80px] leading-none mb-2">Max Vink</span>
-                <div className='flex flex-row items-end pt-[1vw]'>
-                    <span style={{ textShadow: '0px 0px 1px rgba(0, 0, 0, 0.1)' }} className="font-tusker text-white text-center font-medium text-[175px] leading-none">CYCLIST</span>
-                    <span style={{ textShadow: '0px 0px 1px rgba(0, 0, 0, 0.1)' }} className="font-google-sans-code text-[#f3dbc7] text-center font-bold text-[80px] leading-none mb-2">&</span>
-                </div>
-                <div className='flex flex-row items-end pt-[1vw]'>
-                    <span style={{ textShadow: '0px 0px 1px rgba(0, 0, 0, 0.1)' }} className="font-tusker text-white text-center font-medium text-[175px] leading-none">ENGINEER</span>
-                    <span style={{ textShadow: '0px 0px 1px rgba(0, 0, 0, 0.1)' }} className="font-google-sans-code text-[#f3dbc7] text-center font-bold text-[80px] leading-none mb-2">.</span>
-                </div>
-                <CornerBorders />
-            </div>
+    const { setCurrentPage } = useNav()
 
-            <div className='relative flex flex-col items-end justify-end w-3/5 px-[14px] py-[14px]'>
-                <CornerBorders />
-                {[
-                    'I am a developer and cyclist based in Berkeley, CA.',
-                    'I enjoy building software that is both functional and',
-                    ' aesthetically pleasing. I love to race bikes, eat',
-                    'carbohydrates, and read nonfiction.',
-                ].map((line, index) => (
-                    <span key={index} style={{ lineHeight: '1.1' }} className='font-semibold text-white text-right text-[30px]'>
-                        {line}
-                    </span>
-                ))}
+    return (
+        <div className='flex flex-col flex-1 justify-center items-center py-20'>
+            <div className='flex flex-col gap-10 w-[800px] text-[32px] font-noto-sans font-bold text-[#1A4561] ' style={{ letterSpacing: '0.05em' }}>
+                <p>
+                    Hello and welcome. I'm Max Vink, a developer and cyclist based in Berkeley, CA.
+                    I graduated from UC Berkeley in 2024 with a B.S. in Computer Science and a B.A. in Political Science.
+                    Since then, I've been working as a software engineer at Silicon, a FinTech startup focused on capital aquisition for
+                    datacenter infrastructure. I also work as a freelance contractor, building software for companies without a dedicated engineering team.
+                    In both roles, I've built full-stack web applications on a tech stack primarily composed of React, TypeScript, and Tailwind CSS on the frontend,
+                    JavaScript RESTful APIs on the backend, and Postgres for the database, and Supabase, AWS Lambda, and Netlify for the infrastructure. 
+                </p>
+                <p>
+                    I have additional skills with most languages and frameworks, including and especially Python, Java, and C.
+                    I also have experience with machine learning, robotics, and data engineering. I'm passionate about 
+                    building software that is both functional and aesthetically pleasing, and I'm always looking for new challenges and opportunities to grow.
+                </p>
+                <p>
+                    I'm also an amatuer cyclist competing at the highest level of the sport in California. 
+                    I love to race bikes, eat carbohydrates, and entertain my strava followers. You can
+                    <button className='hover:underline mouse-pointer' onClick={() => setCurrentPage('bikes')}><span className='text-[#E6B389]'> explore some of that here</span></button>.
+                </p>
+                <p>
+                    Part of the purpose of this website is to document those skills and projects. The other purpose is to demonstrate qualities that are
+                    difficult to communicate in a resume, including and especially technical complexity, passion, personality, growth, and aesthetic taste.
+                    Consequently, this website is a work in progress, and I will continue to update it as I learn and grow. To that end, here is a{' '}
+                    <a href='https://mjv11.github.io/' target='_blank' rel='noopener noreferrer' className='hover:underline mouse-pointer'><span className='text-[#E6B389]'>link to my first portfolio</span></a>,
+                    which I built in 2023 in vanilla JS and HTML, and so decided not to update but instead remake from scratch in React here. 
+                </p>
+                <p>
+                    As you explore, I hope this website offers insight into my hobbies and abilities, and I hope you enjoy your time here.
+                </p>
             </div>
         </div>
     )

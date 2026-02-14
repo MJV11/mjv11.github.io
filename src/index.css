@@ -18,6 +18,18 @@
   font-family: 'Google Sans Code', monospace;
 }
 
+.font-noto-sans {
+  font-family: 'Noto Sans', sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
+  font-variation-settings: "wdth" 100;
+}
+
+html, body {
+  overflow: hidden;
+  height: 100%;
+}
+
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -26,13 +38,37 @@ body {
 }
 
 #root {
-  width: 100vw;
-  min-height: 100vh;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* Custom scrollbar, fade content at top near nav */
+.scroll-content {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 80px);
+  mask-image: linear-gradient(to bottom, transparent 0, black 80px);
+  scrollbar-width: thin;
+  scrollbar-color: #E6B389 transparent;
+}
+.scroll-content::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-content::-webkit-scrollbar-track {
+  background: #1A456108;
+  border-radius: 4px;
+  margin: 4px 0;
+}
+.scroll-content::-webkit-scrollbar-thumb {
+  background: #E6B389;
+  border-radius: 4px;
+}
+.scroll-content::-webkit-scrollbar-thumb:hover {
+  background: #d4a078;
 }
 

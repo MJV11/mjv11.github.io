@@ -49,14 +49,14 @@ const TILT_Y = -0.7
 const TILT_Z = -1
 
 // Scroll
-const SCROLL_SPEED      = 0.0075
-const SCROLL_BOOST_SENS = 0.015   // how much each px of wheel delta adds to the speed multiplier
-const SCROLL_BOOST_MAX  = 12      // cap on the speed multiplier boost
-const SCROLL_BOOST_DECAY = 0.92   // per-frame exponential decay (lower = snappier return)
+const SCROLL_SPEED       = 0.0075
+const SCROLL_BOOST_SENS  = 0.015  // how much each px of wheel delta adds to the velocity
+const SCROLL_VEL_MAX     = 12     // cap on absolute velocity
+const SCROLL_DECAY_RATE  = 0.08   // lerp rate back toward base velocity each frame (0–1)
 
 /* ─── Colors ─────────────────────────────────────────────────────────── */
 
-const TEXT_COLOR = '#f8f8f8'       // gray-200
+const TEXT_COLOR = '#f8f8f8'
 const BG_COLOR   = '#ffffff'       // white
 
 /* ─── Canvas Texture Builder ──────────────────────────────────────────── */
@@ -214,9 +214,9 @@ export const TextBackground = () => {
     let onWheel:  ((e: WheelEvent) => void) | null = null
     const materials: THREE.ShaderMaterial[] = []
 
-    // Scroll-boost state
-    let scrollBoost   = 0   // current speed multiplier boost (added on top of 1×)
-    let customTime    = 0   // accumulated time that advances faster while scrolling
+    // Scroll-velocity state (signed: positive = default direction, negative = reversed)
+    let scrollVelocity = 1   // 1 = base forward speed
+    let customTime     = 0   // accumulated time that advances based on velocity
 
     ;(async () => {
       await document.fonts.ready
@@ -308,11 +308,12 @@ export const TextBackground = () => {
       }
       window.addEventListener('resize', onResize)
 
-      // ── Scroll boost ──────────────────────────────
+      // ── Scroll velocity ─────────────────────────────
       onWheel = (e: WheelEvent) => {
-        scrollBoost = Math.min(
-          scrollBoost + Math.abs(e.deltaY) * SCROLL_BOOST_SENS,
-          SCROLL_BOOST_MAX,
+        // deltaY > 0 = scroll down → speed up (positive); < 0 = scroll up → reverse (negative)
+        scrollVelocity = Math.max(
+          -SCROLL_VEL_MAX,
+          Math.min(scrollVelocity + e.deltaY * SCROLL_BOOST_SENS, SCROLL_VEL_MAX),
         )
       }
       window.addEventListener('wheel', onWheel, { passive: true })
@@ -324,9 +325,9 @@ export const TextBackground = () => {
         animId = requestAnimationFrame(animate)
         const dt = clock.getDelta()
 
-        // Advance custom time at base rate × (1 + boost)
-        customTime += dt * (1 + scrollBoost)
-        scrollBoost *= SCROLL_BOOST_DECAY
+        // Advance custom time at current velocity, then decay back toward base (1.0)
+        customTime += dt * scrollVelocity
+        scrollVelocity += (1 - scrollVelocity) * SCROLL_DECAY_RATE
 
         for (const m of materials) m.uniforms.uTime.value = customTime
         renderer!.render(scene, camera)

@@ -5,17 +5,20 @@ import './index.css';
 import App from './App.tsx';
 import { PhotoProvider } from './contexts/PhotoContext.tsx';
 import { NavProvider } from './contexts/NavContext.tsx';
+import { PortfolioImagesProvider } from './contexts/PortfolioImagesContext.tsx';
 
 const queryClient = new QueryClient();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <NavProvider>
-      <QueryClientProvider client={queryClient}>
-        <PhotoProvider>
-          <App />
-        </PhotoProvider>
-      </QueryClientProvider>
+      <PortfolioImagesProvider>
+        <QueryClientProvider client={queryClient}>
+          <PhotoProvider>
+            <App />
+          </PhotoProvider>
+        </QueryClientProvider>
+      </PortfolioImagesProvider>
     </NavProvider>
   </StrictMode>,
 )

@@ -7,7 +7,7 @@ const height = 60
 // Triangle density controls.
 // Increase these multipliers for more/smaller triangles (more detail, more GPU cost).
 // Decrease for fewer/larger triangles (faster, chunkier look).
-const density = 6
+const density = 2
 const segX = Math.round(width * density)
 const segY = Math.round(height * density)
 
@@ -160,6 +160,7 @@ function createSlideGeometry(phase: 'in' | 'out'): THREE.BufferGeometry {
 
 const vertexShader = `
 uniform float uTime;
+uniform float uClothTime;
 
 attribute vec2 aAnimation;
 attribute vec3 aStartPosition;
@@ -168,6 +169,8 @@ attribute vec3 aControl1;
 attribute vec3 aEndPosition;
 
 varying vec2 vUv;
+varying vec3 vClothNormal;
+varying float vClothFade;
 
 // cubic bezier
 vec3 cubicBezier(vec3 a, vec3 b, vec3 c, vec3 d, float t) {
@@ -179,7 +182,7 @@ vec3 cubicBezier(vec3 a, vec3 b, vec3 c, vec3 d, float t) {
   return mt3 * a + 3.0 * mt2 * t * b + 3.0 * mt * t2 * c + t3 * d;
 }
 
-// ease in out cubic (Penner) - matches THREE.BAS ShaderChunk['ease_in_out_cubic']
+// ease in out cubic (Penner)
 float ease(float t, float b, float c, float d) {
   t = t / (d * 0.5);
   if (t < 1.0) return b + c * 0.5 * t * t * t;
@@ -198,9 +201,32 @@ void main() {
   vec3 posOffset = cubicBezier(aStartPosition, aControl0, aControl1, aEndPosition, tProgress);
 
   vec3 pos = position;
-  float scale = 1.0 - tProgress; // 'out' phase: scale down as progress increases
+  float scale = 1.0 - tProgress; // SCALE_LINE
   pos *= scale;
   pos += posOffset;
+
+  // ── Cloth ripple ──────────────────────────────────────────
+  // planePos = original vertex position on the flat plane
+  vec3 planePos = position + aStartPosition;
+  float amp = 1.5;
+
+  float clothZ = sin(planePos.x * 0.08 + uClothTime * 1.2)                     * amp
+               + sin(planePos.y * 0.12 + uClothTime * 0.8)                     * amp * 0.6
+               + sin((planePos.x + planePos.y) * 0.06 + uClothTime * 1.5)      * amp * 0.4
+               + sin(planePos.x * 0.2 + planePos.y * 0.15 + uClothTime * 2.0)  * amp * 0.15;
+
+  // Fade ripple: 1 when assembled on the cloth, 0 when fully scattered
+  vClothFade = scale;
+  pos.z += clothZ * vClothFade;
+
+  // Analytical surface normal for cloth lighting
+  float dzdx = 0.08  * cos(planePos.x * 0.08 + uClothTime * 1.2)                * amp
+             + 0.06  * cos((planePos.x + planePos.y) * 0.06 + uClothTime * 1.5) * amp * 0.4
+             + 0.2   * cos(planePos.x * 0.2 + planePos.y * 0.15 + uClothTime * 2.0) * amp * 0.15;
+  float dzdy = 0.12  * cos(planePos.y * 0.12 + uClothTime * 0.8)                * amp * 0.6
+             + 0.06  * cos((planePos.x + planePos.y) * 0.06 + uClothTime * 1.5) * amp * 0.4
+             + 0.15  * cos(planePos.x * 0.2 + planePos.y * 0.15 + uClothTime * 2.0) * amp * 0.15;
+  vClothNormal = normalize(vec3(-dzdx, -dzdy, 1.0));
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }
@@ -212,18 +238,57 @@ uniform vec2 uUvScale;
 uniform vec2 uUvOffset;
 
 varying vec2 vUv;
+varying vec3 vClothNormal;
+varying float vClothFade;
+
+// Simple hash for fabric grain
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
 void main() {
-  // "background-size: cover" sampling (crop from center without stretching image).
   vec2 uv = vUv * uUvScale + uUvOffset;
-  gl_FragColor = texture2D(map, uv);
+  vec4 texColor = texture2D(map, uv);
+
+  // ── Fabric weave texture ──────────────────────────────────
+  // Fine crosshatch pattern simulating warp/weft threads
+  vec2 weaveCoord = vUv * 220.0;
+  float threadH = smoothstep(0.3, 0.7, fract(weaveCoord.x));
+  float threadV = smoothstep(0.3, 0.7, fract(weaveCoord.y));
+  // Alternate which thread sits on top (woven checkerboard)
+  float checker = step(0.5, fract(floor(weaveCoord.x) * 0.5 + floor(weaveCoord.y) * 0.5));
+  float weave = mix(threadH, threadV, checker);
+
+  // Subtle grain / fiber irregularity
+  float grain = hash(floor(vUv * 600.0)) * 0.03;
+
+  // Combine: slight darkening in thread troughs + grain, fades with cloth
+  float fabric = mix(1.0, 0.94 + 0.06 * weave - grain, vClothFade);
+
+  // ── Cloth lighting ────────────────────────────────────────
+  vec3 normal = normalize(mix(vec3(0.0, 0.0, 1.0), vClothNormal, vClothFade));
+  vec3 lightDir = normalize(vec3(0.2, 0.4, 1.0));
+  float diffuse = max(dot(normal, lightDir), 0.0);
+  float lighting = 0.78 + 0.22 * diffuse;
+
+  gl_FragColor = vec4(texColor.rgb * lighting * fabric, texColor.a);
 }
 `
+
+const vertexShaderOut = vertexShader.replace(
+  'float scale = 1.0 - tProgress; // SCALE_LINE',
+  'float scale = 1.0 - tProgress;'
+)
+const vertexShaderIn = vertexShader.replace(
+  'float scale = 1.0 - tProgress; // SCALE_LINE',
+  'float scale = tProgress;'
+)
 
 function createSlideMaterial(phase: 'in' | 'out'): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
+      uClothTime: { value: 0 },
       map: { value: new THREE.Texture() },
       uUvScale: { value: new THREE.Vector2(1, 1) },
       uUvOffset: { value: new THREE.Vector2(0, 0) },
@@ -235,15 +300,6 @@ function createSlideMaterial(phase: 'in' | 'out'): THREE.ShaderMaterial {
     transparent: true,
   })
 }
-
-const vertexShaderOut = vertexShader.replace(
-  'float scale = 1.0 - tProgress;',
-  'float scale = 1.0 - tProgress;'
-)
-const vertexShaderIn = vertexShader.replace(
-  'float scale = 1.0 - tProgress;',
-  'float scale = tProgress;'
-)
 
 export interface SlideMesh {
   mesh: THREE.Mesh
@@ -334,8 +390,13 @@ export function createScene(container: HTMLElement) {
   scene.add(slideOut.mesh)
   scene.add(slideIn.mesh)
 
+  const clock = new THREE.Clock()
   let raf = 0
   function tick() {
+    const elapsed = clock.getElapsedTime()
+    // Drive the cloth ripple on both slide materials
+    ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uClothTime.value = elapsed
+    ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uClothTime.value = elapsed
     renderer.render(scene, camera)
     raf = requestAnimationFrame(tick)
   }
@@ -352,7 +413,7 @@ export function createScene(container: HTMLElement) {
 
     // Scale both slides so the image occupies a portion of the viewport, leaving margin
     // so the particle animation doesn't run into the canvas edges.
-    const sizeFactor = 0.5 // image + animation stay within % of viewport
+    const sizeFactor = 0.3 // image + animation stay within % of viewport
     const distance = Math.abs(camera.position.z - slideOut.mesh.position.z)
     const viewHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * distance
     const viewWidth = viewHeight * camera.aspect
