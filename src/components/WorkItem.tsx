@@ -27,10 +27,10 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
 
       {/* Title + external link */}
       <div className="flex flex-col">
-        <span className={`text-[40px] font-jost leading-tight px-1 w-fit font-semibold py-1 ${work.colors.title}`} style={{ lineHeight: '.8' }}>
+        <span className={`text-[40px] font-jost leading-tight px-1 w-fit font-semibold pt-2 pb-1 ${work.colors.title}`} style={{ lineHeight: '.8' }}>
           {work.title}
         </span>
-        <span className={`text-[24px] font-jost px-1 w-fit font-semibold lowercase py-1 ${work.colors.title}`} style={{ lineHeight: '.8' }}>
+        <span className={`text-[24px] font-jost px-1 w-fit font-semibold lowercase pb-2 ${work.colors.title}`} style={{ lineHeight: '.8' }}>
           {work.subtitle}
         </span>
       </div>

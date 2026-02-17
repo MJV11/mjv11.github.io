@@ -328,7 +328,7 @@ function createSlideMaterial(phase: 'in' | 'out'): THREE.ShaderMaterial {
   })
 }
 
-export interface SlideMesh {
+interface SlideMesh {
   mesh: THREE.Mesh
   setImage(image: HTMLImageElement | HTMLCanvasElement): void
   setViewAspect(aspect: number): void
@@ -336,7 +336,7 @@ export interface SlideMesh {
   getImageAspect(): number
 }
 
-export function createSlide(phase: 'in' | 'out'): SlideMesh {
+function createSlide(phase: 'in' | 'out'): SlideMesh {
   const geometry = createSlideGeometry(phase)
   const material = createSlideMaterial(phase)
   const mesh = new THREE.Mesh(geometry, material)
@@ -368,8 +368,8 @@ export function createSlide(phase: 'in' | 'out'): SlideMesh {
       newTex.needsUpdate = true
       material.uniforms.map.value = newTex
 
-      const w = image.width || 0
-      const h = image.height || 0
+      const w = (image as HTMLImageElement).naturalWidth || image.width || 0
+      const h = (image as HTMLImageElement).naturalHeight || image.height || 0
       if (w > 0 && h > 0) imageAspect = w / h
       updateUvFit()
     },
@@ -528,6 +528,10 @@ export function createScene(container: HTMLElement) {
   slideIn.mesh.renderOrder = 1
   scene.add(slideOut.mesh)
   scene.add(slideIn.mesh)
+
+  // Pre-compile both shader programs so the first transition doesn't stutter
+  // while the GPU compiles the vertex/fragment shaders mid-animation.
+  renderer.compile(scene, camera)
 
   const clock = new THREE.Clock()
   const tweenGroup = new TWEEN.Group()

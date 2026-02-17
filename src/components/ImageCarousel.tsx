@@ -9,7 +9,7 @@ import { createScene, compositeWithLabel, totalDuration, TRANSITION_DURATION } f
 const SETTLE_MS = 400
 const SCROLL_DEBOUNCE_MS = 300
 
-function loadImage(
+function loadRawImage(
   url: string,
   onLoad: (img: HTMLImageElement) => void,
   onError?: () => void
@@ -37,7 +37,7 @@ interface TransitionState {
   inTween: Tween<{ t: number }>
   outProxy: { t: number }
   inProxy: { t: number }
-  incomingImg: HTMLImageElement
+  incomingCanvas: HTMLCanvasElement
   nextIndex: number
 }
 
@@ -88,7 +88,8 @@ export function ImageCarousel({
   const clipRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<ReturnType<typeof createScene> | null>(null)
   const displayedIndexRef = useRef<number>(0)
-  const settledImageRef = useRef<HTMLImageElement | null>(null)
+  /** Pre-composited canvas currently settled in slideOut. */
+  const settledCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const pendingIndexRef = useRef<number | null>(null)
   const isTransitioningRef = useRef(false)
   const isReadyRef = useRef(false)
@@ -102,8 +103,11 @@ export function ImageCarousel({
   const sectionChangeHandledRef = useRef(false)
   const overlayLabelRef = useRef(overlayLabel)
   overlayLabelRef.current = overlayLabel
-  /** Label that was baked into the currently settled slideOut texture. */
-  const displayedLabelRef = useRef(overlayLabel)
+  /**
+   * Cache of pre-composited canvases keyed by "url\0title\0subtitle".
+   * Avoids re-compositing the same image+label pair on rapid navigation.
+   */
+  const compositedCacheRef = useRef<Map<string, HTMLCanvasElement>>(new Map())
 
   const [currentIndex, setCurrentIndex] = useState(0)
 
@@ -119,16 +123,32 @@ export function ImageCarousel({
     })
   }
 
-  const settleToSlideOut = (img: HTMLImageElement, nextIndex: number) => {
+  /** Load a URL, composite the label onto it, and return a cached canvas. */
+  const loadLabeled = (
+    url: string,
+    label: typeof overlayLabel,
+    onLoad: (canvas: HTMLCanvasElement) => void,
+    onError?: () => void,
+  ) => {
+    const key = `${url}\x00${label?.title ?? ''}\x00${label?.subtitle ?? ''}`
+    const cached = compositedCacheRef.current.get(key)
+    if (cached) { onLoad(cached); return }
+    loadRawImage(url, (img) => {
+      const canvas = compositeWithLabel(img, label?.title, label?.subtitle)
+      compositedCacheRef.current.set(key, canvas)
+      onLoad(canvas)
+    }, onError)
+  }
+
+  /** Settle the given pre-composited canvas into slideOut. */
+  const settleToSlideOut = (canvas: HTMLCanvasElement, nextIndex: number) => {
     const scene = sceneRef.current
     if (!scene) return
-    const lbl = overlayLabelRef.current
-    scene.slideOut.setImage(compositeWithLabel(img, lbl?.title, lbl?.subtitle))
+    scene.slideOut.setImage(canvas)
     scene.slideOut.setTime(0)
     scene.slideOut.mesh.visible = true
     scene.slideIn.mesh.visible = false
-    settledImageRef.current = img
-    displayedLabelRef.current = lbl
+    settledCanvasRef.current = canvas
     displayedIndexRef.current = nextIndex
     transitionStateRef.current = null
     isTransitioningRef.current = false
@@ -153,7 +173,7 @@ export function ImageCarousel({
 
     stopActiveTweens()
     const transitionId = transitionIdRef.current
-    const { outProxy, inProxy, incomingImg } = ts
+    const { outProxy, inProxy, incomingCanvas } = ts
 
     const settleOut = new Tween(outProxy, scene.tweenGroup)
       .to({ t: totalDuration }, SETTLE_MS)
@@ -166,7 +186,7 @@ export function ImageCarousel({
       .onUpdate(() => scene.slideIn.setTime(inProxy.t))
       .onComplete(() => {
         if (!mountedRef.current || transitionId !== transitionIdRef.current) return
-        settleToSlideOut(incomingImg, -1)
+        settleToSlideOut(incomingCanvas, -1)
         scheduleRunNext()
       })
 
@@ -175,7 +195,7 @@ export function ImageCarousel({
       inTween: settleIn,
       outProxy,
       inProxy,
-      incomingImg: ts.incomingImg,
+      incomingCanvas: ts.incomingCanvas,
       nextIndex: ts.nextIndex,
     }
 
@@ -209,21 +229,22 @@ export function ImageCarousel({
     transitionIdRef.current += 1
     const transitionId = transitionIdRef.current
 
-    loadImage(nextImageUrl, (img) => {
+    // Capture the incoming label now so the pre-baked canvas uses the correct text.
+    const incomingLabel = overlayLabelRef.current
+
+    loadLabeled(nextImageUrl, incomingLabel, (inCanvas) => {
       if (!mountedRef.current || !sceneRef.current || transitionId !== transitionIdRef.current) {
-        isTransitioningRef.current = false
+        // Stale: a newer transition owns isTransitioningRef — don't touch it.
         return
       }
+      // Re-assert in case a stale sibling callback cleared this between loads.
+      isTransitioningRef.current = true
 
-      // Composite old label onto slideOut (scatters away), new label onto slideIn (assembles)
-      if (settledImageRef.current) {
-        const oldLbl = displayedLabelRef.current
-        currentScene.slideOut.setImage(compositeWithLabel(settledImageRef.current, oldLbl?.title, oldLbl?.subtitle))
-      }
+      // slideOut already holds the correct settled canvas — just reset its time.
       currentScene.slideOut.setTime(0)
+      // slideIn: incoming canvas with new label already baked in.
       currentScene.slideIn.setTime(0)
-      const newLbl = overlayLabelRef.current
-      currentScene.slideIn.setImage(compositeWithLabel(img, newLbl?.title, newLbl?.subtitle))
+      currentScene.slideIn.setImage(inCanvas)
       currentScene.slideIn.mesh.visible = true
 
       const outProxy = { t: 0 }
@@ -240,14 +261,14 @@ export function ImageCarousel({
         .onUpdate(() => currentScene.slideIn.setTime(inProxy.t))
         .onComplete(() => {
           if (!mountedRef.current || !sceneRef.current || transitionId !== transitionIdRef.current) {
-            isTransitioningRef.current = false
+            // Stale — a newer transition owns isTransitioningRef.
             return
           }
-          settleToSlideOut(img, nextIndex)
+          settleToSlideOut(inCanvas, nextIndex)
           scheduleRunNext()
         })
 
-      transitionStateRef.current = { outTween, inTween, outProxy, inProxy, incomingImg: img, nextIndex }
+      transitionStateRef.current = { outTween, inTween, outProxy, inProxy, incomingCanvas: inCanvas, nextIndex }
       outTween.start()
       inTween.start()
     }, () => {
@@ -273,16 +294,14 @@ export function ImageCarousel({
     initLoadIdRef.current += 1
     const initLoadId = initLoadIdRef.current
     const firstUrl = images[0]
-    loadImage(firstUrl, (img) => {
+    loadLabeled(firstUrl, overlayLabelRef.current, (canvas) => {
       if (!mountedRef.current || initLoadId !== initLoadIdRef.current || !sceneRef.current) return
-      const lbl = overlayLabelRef.current
-      scene.slideOut.setImage(compositeWithLabel(img, lbl?.title, lbl?.subtitle))
+      scene.slideOut.setImage(canvas)
       scene.slideOut.setTime(0)
       scene.slideOut.mesh.visible = true
       scene.slideIn.setTime(0)
       scene.slideIn.mesh.visible = false
-      settledImageRef.current = img
-      displayedLabelRef.current = lbl
+      settledCanvasRef.current = canvas
       displayedIndexRef.current = 0
       isReadyRef.current = true
       runNextTransitionRef.current()
@@ -295,7 +314,7 @@ export function ImageCarousel({
       stopActiveTweens()
       transitionStateRef.current = null
       pendingIndexRef.current = null
-      settledImageRef.current = null
+      settledCanvasRef.current = null
       isTransitioningRef.current = false
       if (nextTransitionRafRef.current !== null) {
         window.cancelAnimationFrame(nextTransitionRafRef.current)
@@ -344,16 +363,6 @@ export function ImageCarousel({
   useEffect(() => {
     onIndexChange?.(currentIndex)
   }, [currentIndex, onIndexChange])
-
-  // When the label text changes while idle (no transition in progress),
-  // re-composite the settled slideOut texture so the label updates immediately.
-  useEffect(() => {
-    const scene = sceneRef.current
-    if (!scene || !settledImageRef.current || isTransitioningRef.current) return
-    const lbl = overlayLabel
-    scene.slideOut.setImage(compositeWithLabel(settledImageRef.current, lbl?.title, lbl?.subtitle))
-    displayedLabelRef.current = lbl
-  }, [overlayLabel?.title, overlayLabel?.subtitle])
 
   const next = useCallback(() => {
     setCurrentIndex((i) => (images.length ? (i + 1) % images.length : 0))
