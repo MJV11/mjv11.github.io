@@ -34,15 +34,6 @@ export async function getSectionImageUrls(sectionId: string): Promise<string[]> 
 }
 
 /**
- * Call this to preload all section images (e.g. on first page load or in requestIdleCallback).
- * Use with preloadImages() from utils/preloadImages to actually fetch and cache the image files.
- */
-export async function getAllSectionImageUrls(): Promise<string[]> {
-  const bySection = await getAllSectionImageUrlsBySection()
-  return Object.values(bySection).flat()
-}
-
-/**
  * Load all section image URLs in parallel; returns a map sectionId -> urls.
  * Used by PortfolioImagesProvider to load everything on initial site load.
  */
