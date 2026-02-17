@@ -42,16 +42,20 @@ export function useWorksState(isWorksPage: boolean) {
     setSelectedWork(null)
   }, [clearPalette])
 
-  const overlayLabel =
-    isWorksPage && currentWork
-      ? { title: currentWork.title, subtitle: currentWork.subtitle }
-      : null
+  const getLabelForIndex = useCallback(
+    (index: number): { title: string; subtitle?: string } | null => {
+      if (!isWorksPage) return null
+      const work = works[index] ?? null
+      return work ? { title: work.title, subtitle: work.subtitle } : null
+    },
+    [isWorksPage],
+  )
 
   return {
     isExpanded,
     currentWork,
     expandedWork,
-    overlayLabel,
+    getLabelForIndex,
     handleIndexChange,
     handleImageClick,
     handleCloseDetails,

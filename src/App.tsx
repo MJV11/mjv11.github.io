@@ -16,7 +16,7 @@ function App() {
   const {
     isExpanded,
     expandedWork,
-    overlayLabel,
+    getLabelForIndex,
     handleIndexChange,
     handleImageClick,
     handleCloseDetails,
@@ -68,7 +68,7 @@ function App() {
                   sectionId={hasCarouselSection ? currentPage : undefined}
                   onIndexChange={handleIndexChange}
                   onImageClick={handleImageClick}
-                  overlayLabel={overlayLabel}
+                  getLabelForIndex={getLabelForIndex}
                   disabled={isExpanded}
                 />
               </div>

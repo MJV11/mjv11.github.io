@@ -27,7 +27,10 @@ interface ImageCarouselProps {
   sectionId?: string
   onIndexChange?: (index: number) => void
   onImageClick?: (index: number) => void
-  overlayLabel?: { title: string; subtitle?: string } | null
+  /** Synchronous lookup: given a carousel index, return the label to bake onto
+   *  that image, or null for no label.  Called at transition-start time so
+   *  the correct label is always composited regardless of render timing. */
+  getLabelForIndex?: (index: number) => { title: string; subtitle?: string } | null
   /** When true, scroll/keyboard switching and navigation UI are disabled. */
   disabled?: boolean
 }
@@ -81,7 +84,7 @@ export function ImageCarousel({
   sectionId,
   onIndexChange,
   onImageClick,
-  overlayLabel,
+  getLabelForIndex,
   disabled = false,
 }: ImageCarouselProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -101,8 +104,8 @@ export function ImageCarousel({
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Set by the sectionId effect to prevent the currentIndex/images effect from double-triggering. */
   const sectionChangeHandledRef = useRef(false)
-  const overlayLabelRef = useRef(overlayLabel)
-  overlayLabelRef.current = overlayLabel
+  const getLabelRef = useRef(getLabelForIndex)
+  getLabelRef.current = getLabelForIndex
   /**
    * Cache of pre-composited canvases keyed by "url\0title\0subtitle".
    * Avoids re-compositing the same image+label pair on rapid navigation.
@@ -123,13 +126,14 @@ export function ImageCarousel({
     })
   }
 
-  /** Load a URL, composite the label onto it, and return a cached canvas. */
+  /** Load a URL, composite the label for the given index onto it, and return a cached canvas. */
   const loadLabeled = (
     url: string,
-    label: typeof overlayLabel,
+    index: number,
     onLoad: (canvas: HTMLCanvasElement) => void,
     onError?: () => void,
   ) => {
+    const label = getLabelRef.current?.(index) ?? null
     const key = `${url}\x00${label?.title ?? ''}\x00${label?.subtitle ?? ''}`
     const cached = compositedCacheRef.current.get(key)
     if (cached) { onLoad(cached); return }
@@ -229,10 +233,7 @@ export function ImageCarousel({
     transitionIdRef.current += 1
     const transitionId = transitionIdRef.current
 
-    // Capture the incoming label now so the pre-baked canvas uses the correct text.
-    const incomingLabel = overlayLabelRef.current
-
-    loadLabeled(nextImageUrl, incomingLabel, (inCanvas) => {
+    loadLabeled(nextImageUrl, nextIndex, (inCanvas) => {
       if (!mountedRef.current || !sceneRef.current || transitionId !== transitionIdRef.current) {
         // Stale: a newer transition owns isTransitioningRef — don't touch it.
         return
@@ -294,7 +295,7 @@ export function ImageCarousel({
     initLoadIdRef.current += 1
     const initLoadId = initLoadIdRef.current
     const firstUrl = images[0]
-    loadLabeled(firstUrl, overlayLabelRef.current, (canvas) => {
+    loadLabeled(firstUrl, 0, (canvas) => {
       if (!mountedRef.current || initLoadId !== initLoadIdRef.current || !sceneRef.current) return
       scene.slideOut.setImage(canvas)
       scene.slideOut.setTime(0)
