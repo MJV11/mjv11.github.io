@@ -5,7 +5,7 @@ export interface ColorPalette {
 }
 
 const DEFAULT_PALETTE: ColorPalette = {
-  tones: ['#fafafa', '#f0f0f0', '#e4e4e4', '#d6d6d6'],
+  tones: ['#fafafa', '#f0f0f0', '#f2f2f2', '#f5f5f5'],
 }
 
 interface ColorContextValue {

@@ -9,6 +9,10 @@ import { createScene, compositeWithLabel, totalDuration, TRANSITION_DURATION } f
 const SETTLE_MS = 400
 const SCROLL_DEBOUNCE_MS = 300
 
+/** Mouse-tilt effect constants */
+const MAX_TILT_DEG = 15   // maximum rotation in either axis
+const TILT_LERP    = 0.07 // interpolation speed per frame (~60 fps)
+
 function loadRawImage(
   url: string,
   onLoad: (img: HTMLImageElement) => void,
@@ -76,6 +80,53 @@ function MouseScrollIcon({ className }: { className?: string }) {
   )
 }
 
+/** A single digit slot that mechanically rolls to the given numeric character. */
+function DialDigit({ char }: { char: string }) {
+  if (!/^\d$/.test(char)) {
+    return (
+      <span className="font-medium text-base text-black leading-none">
+        {char}
+      </span>
+    )
+  }
+  const n = parseInt(char)
+  const cellH = 24 // px — matches text-base (16px × 1.5) line-height
+
+  return (
+    <span
+      className="relative overflow-hidden inline-block"
+      style={{ height: cellH, width: '1ch', verticalAlign: 'middle' }}
+    >
+      <span
+        className="absolute inset-x-0 top-0 flex flex-col items-center text-black font-medium text-base tabular-nums transition-transform duration-300 ease-out"
+        style={{
+          transform: `translateY(${-n * cellH}px)`,
+          lineHeight: `${cellH}px`,
+        }}
+      >
+        {Array.from({ length: 10 }, (_, d) => (
+          <span key={d} style={{ height: cellH }}>{d}</span>
+        ))}
+      </span>
+    </span>
+  )
+}
+
+/** Mechanical counter dial displaying "current / total". */
+function DialCounter({ current, total }: { current: number; total: number }) {
+  const label = `${String(current)} / ${String(total)}`
+  return (
+    <span
+      className="inline-flex items-center font-medium text-base tabular-nums gap-2"
+      style={{ height: 24 }}
+    >
+      {label.split(' ').map((char, i) => (
+        <DialDigit key={i} char={char} />
+      ))}
+    </span>
+  )
+}
+
 export function ImageCarousel({
   images,
   className = '',
@@ -89,6 +140,10 @@ export function ImageCarousel({
 }: ImageCarouselProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const clipRef = useRef<HTMLDivElement>(null)
+  const tiltWrapRef = useRef<HTMLDivElement>(null)
+  const tiltTargetRef = useRef({ x: 0, y: 0 })
+  const tiltCurrentRef = useRef({ x: 0, y: 0 })
+  const tiltRafRef = useRef<number | null>(null)
   const sceneRef = useRef<ReturnType<typeof createScene> | null>(null)
   const displayedIndexRef = useRef<number>(0)
   /** Pre-composited canvas currently settled in slideOut. */
@@ -373,6 +428,59 @@ export function ImageCarousel({
     setCurrentIndex((i) => (images.length ? (i - 1 + images.length) % images.length : 0))
   }, [images.length])
 
+  /** Starts the tilt rAF loop if it isn't already running. */
+  const startTiltLoop = useCallback(() => {
+    if (tiltRafRef.current !== null) return
+    const tick = () => {
+      const target = tiltTargetRef.current
+      const cur = tiltCurrentRef.current
+      cur.x += (target.x - cur.x) * TILT_LERP
+      cur.y += (target.y - cur.y) * TILT_LERP
+      const wrap = tiltWrapRef.current
+      if (wrap) {
+        wrap.style.transform =
+          `perspective(900px) rotateX(${cur.x.toFixed(3)}deg) rotateY(${cur.y.toFixed(3)}deg)`
+      }
+      const settled =
+        Math.abs(target.x - cur.x) < 0.005 &&
+        Math.abs(target.y - cur.y) < 0.005
+      if (settled) {
+        tiltRafRef.current = null
+      } else {
+        tiltRafRef.current = requestAnimationFrame(tick)
+      }
+    }
+    tiltRafRef.current = requestAnimationFrame(tick)
+  }, [])
+
+  // Mouse-tilt: track global mouse position against the viewport centre
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      const nx = (e.clientX / window.innerWidth) * 2 - 1   // −1 … +1
+      const ny = (e.clientY / window.innerHeight) * 2 - 1  // −1 … +1
+      tiltTargetRef.current = { x: -ny * MAX_TILT_DEG, y: nx * MAX_TILT_DEG }
+      startTiltLoop()
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      if (tiltRafRef.current !== null) {
+        cancelAnimationFrame(tiltRafRef.current)
+        tiltRafRef.current = null
+      }
+      if (tiltWrapRef.current) tiltWrapRef.current.style.transform = ''
+    }
+  }, [startTiltLoop])
+
+  // Reset tilt when the panel is opened (disabled = true)
+  useEffect(() => {
+    if (disabled) {
+      tiltTargetRef.current = { x: 0, y: 0 }
+      startTiltLoop()
+    }
+  }, [disabled, startTiltLoop])
+
   // Keyboard arrow handlers
   useEffect(() => {
     if (disabled) return
@@ -428,17 +536,23 @@ export function ImageCarousel({
   return (
     <div className={`flex items-center justify-center ${className}`}>
       <div className="flex flex-col items-center gap-3">
-        {/* Visible area — clips the oversized canvas */}
+        {/* Tilt wrapper — receives mouse-tracking perspective transform */}
         <div
-          ref={clipRef}
-          className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0 cursor-pointer`}
-          onClick={handleCanvasClick}
+          ref={tiltWrapRef}
+          style={{ transformStyle: 'preserve-3d', willChange: 'transform' }}
         >
+          {/* Visible area — clips the oversized canvas */}
           <div
-            ref={containerRef}
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-            style={{ width: `${canvasScale * 100}%`, height: `${canvasScale * 100}%` }}
-          />
+            ref={clipRef}
+            className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0 cursor-pointer`}
+            onClick={handleCanvasClick}
+          >
+            <div
+              ref={containerRef}
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              style={{ width: `${canvasScale * 100}%`, height: `${canvasScale * 100}%` }}
+            />
+          </div>
         </div>
 
         {/* Navigation hints + page counter */}
@@ -449,7 +563,7 @@ export function ImageCarousel({
           <CornerBorders className="w-4 h-4" />
 
           {/* Arrow keys hint */}
-          <div className="flex flex-row items-center gap-2 text-black">
+          <div className="flex flex-row items-center gap-2 text-black pl-4">
             <ArrowKeysIcon />
             <span className="text-xs font-noto-sans tracking-wide opacity-70">press arrow key</span>
           </div>
@@ -459,16 +573,14 @@ export function ImageCarousel({
             <button onClick={prev} aria-label="Previous photo">
               <PiCaretLeftBold size={24} className="text-black hover:text-[#E6B389]" />
             </button>
-            <span className="text-black font-medium text-base tabular-nums">
-              {String(currentIndex + 1).padStart(2, '0')} / {String(images.length).padStart(2, '0')}
-            </span>
+            <DialCounter current={currentIndex + 1} total={images.length} />
             <button onClick={next} aria-label="Next photo">
               <PiCaretRightBold size={24} className="text-black hover:text-[#E6B389]" />
             </button>
           </div>
 
           {/* Mouse scroll hint */}
-          <div className="flex flex-row items-center gap-2 text-black">
+          <div className="flex flex-row items-center gap-2 text-black pr-4">
             <MouseScrollIcon />
             <span className="text-xs font-noto-sans tracking-wide opacity-70">mouse scroll</span>
           </div>

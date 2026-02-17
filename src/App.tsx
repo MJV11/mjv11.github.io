@@ -1,4 +1,4 @@
-import { Bikes, Nav, AboutPage, ImageCarousel, WorkItem, MosaicBackground } from './components'
+import { Bikes, Nav, AboutPage, ImageCarousel, WorkItem, MosaicBackground, LoadingScreen } from './components'
 import { useNav } from './contexts/NavContext'
 import { usePortfolioImagesContext } from './contexts/PortfolioImagesContext'
 import { SECTIONS_WITH_IMAGES } from './config/portfolioImages'
@@ -24,15 +24,11 @@ function App() {
 
   return (
     <div className='fixed inset-0 flex flex-col overflow-hidden'>
+      <LoadingScreen isVisible={!isReady} />
       <MosaicBackground />
       <div className='shrink-0 p-[14px] z-10 flex justify-center'>
         <Nav />
       </div>
-      {!isReady && (
-        <div className='relative w-full h-[90vh] shrink-0 flex items-center justify-center text-white/70'>
-          Loading images…
-        </div>
-      )}
       <main className='scroll-content flex-1 min-h-0 overflow-y-auto z-10'>
         {isReady && carouselImages.length > 0 && (
           <div
