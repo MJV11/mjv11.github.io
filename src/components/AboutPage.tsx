@@ -2,10 +2,11 @@ import { useNav } from '../contexts/NavContext'
 
 export const AboutPage = () => {
     const { setCurrentPage } = useNav()
+    // black is the blue we like
 
     return (
         <div className='flex flex-col flex-1 justify-center items-center py-20'>
-            <div className='flex flex-col gap-10 w-[800px] text-[32px] font-noto-sans font-bold text-[#1A4561] ' style={{ letterSpacing: '0.05em' }}>
+            <div className='flex flex-col gap-10 w-[800px] text-[32px] font-noto-sans font-bold text-black ' style={{ letterSpacing: '0.05em' }}>
                 <p>
                     Hello and welcome. I'm Max Vink, a developer and cyclist based in Berkeley, CA.
                     I graduated from UC Berkeley in 2024 with a B.S. in Computer Science and a B.A. in Political Science.

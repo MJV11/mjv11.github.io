@@ -1,8 +1,9 @@
 import * as THREE from 'three'
+import * as TWEEN from '@tweenjs/tween.js'
 
 // Base plane size in world units before viewport scaling.
 const width = 100
-const height = 60
+const height = 100
 
 // Triangle density controls.
 // Increase these multipliers for more/smaller triangles (more detail, more GPU cost).
@@ -18,8 +19,8 @@ const maxDelayX = 0.9
 const maxDelayY = 0.125
 const stretch = 0.11
 export const totalDuration = maxDuration + maxDelayX + maxDelayY + stretch
-/** Duration in seconds for the GSAP timeline (user-facing transition length). */
-export const TRANSITION_DURATION = 3
+/** Duration in seconds for the tween (user-facing transition length). */
+export const TRANSITION_DURATION = 2
 
 function randFloat(a: number, b: number) {
   return a + Math.random() * (b - a)
@@ -206,26 +207,28 @@ void main() {
   pos += posOffset;
 
   // ── Cloth ripple ──────────────────────────────────────────
-  // planePos = original vertex position on the flat plane
+  // Diagonal phase (equal x and y): wave propagates top-right → bottom-left
   vec3 planePos = position + aStartPosition;
-  float amp = 1.5;
+  float phase = planePos.x + planePos.y;
+  float k = 0.1;
+  float speed = 3.0;
+  // Wave strength increases right (x>0) to left (x<0); plane half-width 50
+  float ampScale = 1.0 - 0.5 * (planePos.x / 50.0);
+  ampScale = max(ampScale, 0.35);
+  float amp = 2.0 * ampScale;
 
-  float clothZ = sin(planePos.x * 0.08 + uClothTime * 1.2)                     * amp
-               + sin(planePos.y * 0.12 + uClothTime * 0.8)                     * amp * 0.6
-               + sin((planePos.x + planePos.y) * 0.06 + uClothTime * 1.5)      * amp * 0.4
-               + sin(planePos.x * 0.2 + planePos.y * 0.15 + uClothTime * 2.0)  * amp * 0.15;
+  float waveArg = phase * k + uClothTime * speed;
+  float clothZ = sin(waveArg) * amp;
 
   // Fade ripple: 1 when assembled on the cloth, 0 when fully scattered
   vClothFade = scale;
   pos.z += clothZ * vClothFade;
 
-  // Analytical surface normal for cloth lighting
-  float dzdx = 0.08  * cos(planePos.x * 0.08 + uClothTime * 1.2)                * amp
-             + 0.06  * cos((planePos.x + planePos.y) * 0.06 + uClothTime * 1.5) * amp * 0.4
-             + 0.2   * cos(planePos.x * 0.2 + planePos.y * 0.15 + uClothTime * 2.0) * amp * 0.15;
-  float dzdy = 0.12  * cos(planePos.y * 0.12 + uClothTime * 0.8)                * amp * 0.6
-             + 0.06  * cos((planePos.x + planePos.y) * 0.06 + uClothTime * 1.5) * amp * 0.4
-             + 0.15  * cos(planePos.x * 0.2 + planePos.y * 0.15 + uClothTime * 2.0) * amp * 0.15;
+  // Analytical surface normal (amp varies with x so dzdx gets extra term)
+  float dAmpDx = -0.02; // d(amp)/dx for ampScale linear in x
+  float dzdPhase = k * cos(waveArg) * amp;
+  float dzdx = dzdPhase + sin(waveArg) * dAmpDx;
+  float dzdy = dzdPhase;
   vClothNormal = normalize(vec3(-dzdx, -dzdy, 1.0));
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
@@ -236,6 +239,9 @@ const fragmentShader = `
 uniform sampler2D map;
 uniform vec2 uUvScale;
 uniform vec2 uUvOffset;
+uniform float uFitMode; // 0.0 = cover, 1.0 = contain
+uniform float uViewAspect;
+uniform float uImageAspect;
 
 varying vec2 vUv;
 varying vec3 vClothNormal;
@@ -247,8 +253,26 @@ float hash(vec2 p) {
 }
 
 void main() {
-  vec2 uv = vUv * uUvScale + uUvOffset;
+  vec2 uv;
+  float inBounds = 1.0;
+  if (uFitMode > 0.5) {
+    // Contain: letterbox/pillarbox so full image is visible
+    float contentW = uImageAspect / uViewAspect;
+    float contentH = uViewAspect / uImageAspect;
+    float xMin = (1.0 - contentW) * 0.5;
+    float yMin = (1.0 - contentH) * 0.5;
+    if (uViewAspect > uImageAspect) {
+      inBounds = step(xMin, vUv.x) * step(vUv.x, xMin + contentW);
+      uv = vec2((vUv.x - xMin) / contentW, vUv.y);
+    } else {
+      inBounds = step(yMin, vUv.y) * step(vUv.y, yMin + contentH);
+      uv = vec2(vUv.x, (vUv.y - yMin) / contentH);
+    }
+  } else {
+    uv = vUv * uUvScale + uUvOffset;
+  }
   vec4 texColor = texture2D(map, uv);
+  texColor.a *= inBounds;
 
   // ── Fabric weave texture ──────────────────────────────────
   // Fine crosshatch pattern simulating warp/weft threads
@@ -265,9 +289,9 @@ void main() {
   // Combine: slight darkening in thread troughs + grain, fades with cloth
   float fabric = mix(1.0, 0.94 + 0.06 * weave - grain, vClothFade);
 
-  // ── Cloth lighting ────────────────────────────────────────
+  // ── Cloth lighting (normal shading only) ───────────────────
   vec3 normal = normalize(mix(vec3(0.0, 0.0, 1.0), vClothNormal, vClothFade));
-  vec3 lightDir = normalize(vec3(0.2, 0.4, 1.0));
+  vec3 lightDir = normalize(vec3(1.0, 1.0, 0.8));
   float diffuse = max(dot(normal, lightDir), 0.0);
   float lighting = 0.78 + 0.22 * diffuse;
 
@@ -292,6 +316,9 @@ function createSlideMaterial(phase: 'in' | 'out'): THREE.ShaderMaterial {
       map: { value: new THREE.Texture() },
       uUvScale: { value: new THREE.Vector2(1, 1) },
       uUvOffset: { value: new THREE.Vector2(0, 0) },
+      uFitMode: { value: 1 }, // 1 = contain
+      uViewAspect: { value: 1 },
+      uImageAspect: { value: 1 },
     },
     vertexShader: phase === 'in' ? vertexShaderIn : vertexShaderOut,
     fragmentShader,
@@ -306,6 +333,7 @@ export interface SlideMesh {
   setImage(image: HTMLImageElement | HTMLCanvasElement): void
   setViewAspect(aspect: number): void
   setTime(t: number): void
+  getImageAspect(): number
 }
 
 export function createSlide(phase: 'in' | 'out'): SlideMesh {
@@ -316,19 +344,14 @@ export function createSlide(phase: 'in' | 'out'): SlideMesh {
   let imageAspect = width / height
   let viewAspect = width / height
 
-  function updateUvCover() {
+  function updateUvFit() {
     const uvScale = material.uniforms.uUvScale.value as THREE.Vector2
     const uvOffset = material.uniforms.uUvOffset.value as THREE.Vector2
-
-    if (viewAspect > imageAspect) {
-      // View is wider: keep full width, crop top/bottom.
-      uvScale.set(1, imageAspect / viewAspect)
-    } else {
-      // View is taller/narrower: keep full height, crop left/right.
-      uvScale.set(viewAspect / imageAspect, 1)
-    }
-
-    uvOffset.set((1 - uvScale.x) * 0.5, (1 - uvScale.y) * 0.5)
+    // Contain mode: full image visible, letterbox/pillarbox in shader via uFitMode/uViewAspect/uImageAspect
+    uvScale.set(1, 1)
+    uvOffset.set(0, 0)
+    ;(material.uniforms.uViewAspect as THREE.IUniform).value = viewAspect
+    ;(material.uniforms.uImageAspect as THREE.IUniform).value = imageAspect
   }
 
   return {
@@ -348,17 +371,135 @@ export function createSlide(phase: 'in' | 'out'): SlideMesh {
       const w = image.width || 0
       const h = image.height || 0
       if (w > 0 && h > 0) imageAspect = w / h
-      updateUvCover()
+      updateUvFit()
     },
     setViewAspect(aspect: number) {
       if (!Number.isFinite(aspect) || aspect <= 0) return
       viewAspect = aspect
-      updateUvCover()
+      updateUvFit()
     },
     setTime(t: number) {
       material.uniforms.uTime.value = t
     },
+    getImageAspect() {
+      return imageAspect
+    },
   }
+}
+
+/* ── Composite label text directly onto an image ───────────────── */
+
+export function compositeWithLabel(
+  image: HTMLImageElement | HTMLCanvasElement,
+  title?: string | null,
+  subtitle?: string | null,
+): HTMLCanvasElement {
+  const imgW = (image as HTMLImageElement).naturalWidth || image.width || 1
+  const imgH = (image as HTMLImageElement).naturalHeight || image.height || 1
+
+  if (!title) {
+    const canvas = document.createElement('canvas')
+    canvas.width = imgW
+    canvas.height = imgH
+    canvas.getContext('2d')!.drawImage(image, 0, 0, imgW, imgH)
+    return canvas
+  }
+
+  // ── Measure label dimensions first (need a temporary canvas for measureText) ──
+  const s = Math.max(imgH / 900, 0.5)
+  const titlePx  = Math.round(30 * s)
+  const subPx    = Math.round(22 * s)
+  const padX     = Math.round(20 * s)
+  const padY     = Math.round(12 * s)
+  const gap      = subtitle ? Math.round(6 * s) : 0
+  const depth    = Math.round(12 * s)
+
+  const titleFont = `bold ${titlePx}px 'Noto Sans', 'Helvetica Neue', sans-serif`
+  const subFont   = `${subPx}px 'Noto Sans', 'Helvetica Neue', sans-serif`
+
+  const measure = document.createElement('canvas').getContext('2d')!
+  measure.font = titleFont
+  const tw = measure.measureText(title).width
+  let sw = 0
+  if (subtitle) { measure.font = subFont; sw = measure.measureText(subtitle).width }
+
+  const bw = Math.max(tw, sw) + padX * 2
+  const bh = padY + titlePx + gap + (subtitle ? subPx : 0) + padY
+
+  // Label anchored at bottom-left of image, offset outside by these margins.
+  // Positive = further outside the image boundary.
+  const outsideX = Math.round(imgW * 0.03)
+  const outsideY = Math.round(imgH * 0.04)
+
+  // ── Compute how far the label extends beyond the image in each direction ──
+  // Block position relative to image origin (can be negative / past edge)
+  const relBx = -outsideX                       // left edge of front face
+  const relBy = imgH + outsideY - bh            // top edge of front face (above bottom of block)
+  const relBottom = relBy + bh                   // bottom edge of front face
+  const relRight  = relBx + bw + depth           // rightmost pixel (3D right face)
+  const relTop    = relBy - depth                // topmost pixel (3D top face)
+
+  // Extra padding needed beyond image bounds
+  const padLeft   = Math.max(0, -relBx)
+  const padTop    = Math.max(0, -relTop)
+  const padRight  = Math.max(0, relRight - imgW)
+  const padBottom = Math.max(0, relBottom - imgH)
+
+  // ── Create canvas large enough for image + label overflow ──
+  const canvasW = imgW + padLeft + padRight
+  const canvasH = imgH + padTop + padBottom
+
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasW
+  canvas.height = canvasH
+  const ctx = canvas.getContext('2d')!
+
+  // Draw the source image offset into the canvas
+  ctx.drawImage(image, padLeft, padTop, imgW, imgH)
+
+  // Translate label coordinates into canvas space
+  const bx = padLeft + relBx
+  const by = padTop + relBy
+
+  // ── 3D depth: top face and right face ──
+
+  // Right face (shadow side)
+  ctx.fillStyle = 'rgba(28, 28, 28, 1)'
+  ctx.beginPath()
+  ctx.moveTo(bx + bw, by)
+  ctx.lineTo(bx + bw + depth, by - depth)
+  ctx.lineTo(bx + bw + depth, by + bh - depth)
+  ctx.lineTo(bx + bw, by + bh)
+  ctx.closePath()
+  ctx.fill()
+
+  // Top face (catches light)
+  ctx.fillStyle = 'rgba(38, 38, 38, 1)'
+  ctx.beginPath()
+  ctx.moveTo(bx, by)
+  ctx.lineTo(bx + depth, by - depth)
+  ctx.lineTo(bx + bw + depth, by - depth)
+  ctx.lineTo(bx + bw, by)
+  ctx.closePath()
+  ctx.fill()
+
+  // Front face
+  ctx.fillStyle = 'rgba(0, 0, 0, 1)'
+  ctx.fillRect(bx, by, bw, bh)
+
+  ctx.fillStyle = '#FFFFFF'
+  ctx.font = titleFont
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  ctx.fillText(title, bx + padX, by + padY)
+
+  if (subtitle) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.75)'
+    ctx.font = subFont
+    ctx.fillText(subtitle, bx + padX, by + padY + titlePx + gap)
+  }
+
+  return canvas
 }
 
 export function createScene(container: HTMLElement) {
@@ -383,20 +524,20 @@ export function createScene(container: HTMLElement) {
 
   const slideOut = createSlide('out')
   const slideIn = createSlide('in')
-  // Guarantee slideIn always paints on top of slideOut so that
-  // during a transition the assembling image is never occluded.
   slideOut.mesh.renderOrder = 0
   slideIn.mesh.renderOrder = 1
   scene.add(slideOut.mesh)
   scene.add(slideIn.mesh)
 
   const clock = new THREE.Clock()
+  const tweenGroup = new TWEEN.Group()
   let raf = 0
   function tick() {
     const elapsed = clock.getElapsedTime()
-    // Drive the cloth ripple on both slide materials
     ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uClothTime.value = elapsed
     ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uClothTime.value = elapsed
+
+    tweenGroup.update()
     renderer.render(scene, camera)
     raf = requestAnimationFrame(tick)
   }
@@ -411,9 +552,7 @@ export function createScene(container: HTMLElement) {
     camera.updateProjectionMatrix()
     renderer.setSize(w, h)
 
-    // Scale both slides so the image occupies a portion of the viewport, leaving margin
-    // so the particle animation doesn't run into the canvas edges.
-    const sizeFactor = 0.3 // image + animation stay within % of viewport
+    const sizeFactor = 0.4
     const distance = Math.abs(camera.position.z - slideOut.mesh.position.z)
     const viewHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * distance
     const viewWidth = viewHeight * camera.aspect
@@ -422,10 +561,13 @@ export function createScene(container: HTMLElement) {
     slideOut.mesh.scale.set(scaleX, scaleY, 1)
     slideIn.mesh.scale.set(scaleX, scaleY, 1)
 
-    // Update "cover" UV mapping to match viewport aspect.
     slideOut.setViewAspect(camera.aspect)
     slideIn.setViewAspect(camera.aspect)
   }
+  // Use ResizeObserver for reliable resize detection (handles DevTools open/close,
+  // container layout changes, etc. that window 'resize' may miss).
+  const resizeObserver = new ResizeObserver(() => resize())
+  resizeObserver.observe(container)
   window.addEventListener('resize', resize)
   resize()
 
@@ -435,9 +577,12 @@ export function createScene(container: HTMLElement) {
     camera,
     slideOut,
     slideIn,
+    tweenGroup,
     resize,
     destroy() {
+      tweenGroup.removeAll()
       cancelAnimationFrame(raf)
+      resizeObserver.disconnect()
       window.removeEventListener('resize', resize)
       container.removeChild(renderer.domElement)
       renderer.dispose()

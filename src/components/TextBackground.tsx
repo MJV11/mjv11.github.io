@@ -56,7 +56,7 @@ const SCROLL_DECAY_RATE  = 0.08   // lerp rate back toward base velocity each fr
 
 /* ─── Colors ─────────────────────────────────────────────────────────── */
 
-const TEXT_COLOR = '#f8f8f8'
+const TEXT_COLOR = '#f9f9f9'
 const BG_COLOR   = '#ffffff'       // white
 
 /* ─── Canvas Texture Builder ──────────────────────────────────────────── */

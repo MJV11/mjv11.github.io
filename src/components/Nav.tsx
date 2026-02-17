@@ -18,7 +18,7 @@ export const Nav = () => {
                 after:scale-x-0 after:h-[2px] after:-bottom-1 after:left-0 after:bg-[#E6B389] 
                 after:origin-bottom-right after:transition-transform after:duration-300 
                 hover:after:scale-x-100 hover:after:origin-bottom-left
-                ${currentPage === item ? 'text-[#E6B389]' : 'text-[#1A4561]'}`}
+                ${currentPage === item ? 'text-[#E6B389]' : 'text-black'}`}
           >
             {item}
           </button>

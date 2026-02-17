@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
+    "@tweenjs/tween.js": "^25.0.0",
     "flowbite-react": "^0.10.2",
     "flowbite-typography": "^1.0.5",
     "gsap": "^3.14.2",

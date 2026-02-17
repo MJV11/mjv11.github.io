@@ -6,19 +6,22 @@ import App from './App.tsx';
 import { PhotoProvider } from './contexts/PhotoContext.tsx';
 import { NavProvider } from './contexts/NavContext.tsx';
 import { PortfolioImagesProvider } from './contexts/PortfolioImagesContext.tsx';
+import { ColorProvider } from './contexts/ColorContext.tsx';
 
 const queryClient = new QueryClient();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <NavProvider>
-      <PortfolioImagesProvider>
-        <QueryClientProvider client={queryClient}>
-          <PhotoProvider>
-            <App />
-          </PhotoProvider>
-        </QueryClientProvider>
-      </PortfolioImagesProvider>
-    </NavProvider>
+    <ColorProvider>
+      <NavProvider>
+        <PortfolioImagesProvider>
+          <QueryClientProvider client={queryClient}>
+            <PhotoProvider>
+              <App />
+            </PhotoProvider>
+          </QueryClientProvider>
+        </PortfolioImagesProvider>
+      </NavProvider>
+    </ColorProvider>
   </StrictMode>,
 )

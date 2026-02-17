@@ -16,6 +16,14 @@
 
 .font-google-sans-code {
   font-family: 'Google Sans Code', monospace;
+  font-optical-sizing: auto;
+  font-style: normal;
+}
+
+.font-jost {
+  font-family: 'Jost', sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
 }
 
 .font-noto-sans {
@@ -70,5 +78,13 @@ canvas {
 }
 .scroll-content::-webkit-scrollbar-thumb:hover {
   background: #d4a078;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out both;
 }
 

@@ -7,7 +7,7 @@ export function Bikes() {
   return (
     <div className='flex flex-col flex-1 justify-center items-center'>
       <div
-        className='flex flex-col gap-10 w-[800px] text-[32px] font-noto-sans font-bold text-[#1A4561]'
+        className='flex flex-col gap-10 w-[800px] text-[32px] font-noto-sans font-bold text-black'
         style={{ letterSpacing: '0.05em' }}
       >
         <div className='flex flex-col gap-4'>

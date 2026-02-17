@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
-import gsap from 'gsap'
+import { Tween, Easing } from '@tweenjs/tween.js'
 import { PiCaretRightBold, PiCaretLeftBold } from 'react-icons/pi'
 import { CornerBorders } from '../utils'
-import { createScene, totalDuration, TRANSITION_DURATION } from '../utils/slideTransition'
+import { createScene, compositeWithLabel, totalDuration, TRANSITION_DURATION } from '../utils/slideTransition'
+
+/** Duration (ms) for the "rush to completion" settle when interrupted mid-transition. */
+const SETTLE_MS = 400
+const SCROLL_DEBOUNCE_MS = 300
 
 function loadImage(
   url: string,
@@ -18,19 +22,70 @@ function loadImage(
 interface ImageCarouselProps {
   images: string[]
   className?: string
-  /** Optional: control size. Defaults to a large viewport so the slide effect is fully visible. */
   sizeClassName?: string
-  /**
-   * Scale factor for the Three.js canvas relative to the visible area.
-   * Values > 1 make the canvas larger than the visible container (overflow is clipped),
-   * so the image appears at a more natural / full size instead of being shrunk.
-   * e.g. 2.5 means the canvas is 250 % of the visible area in each dimension.
-   */
   canvasScale?: number
+  sectionId?: string
+  onIndexChange?: (index: number) => void
+  onImageClick?: (index: number) => void
+  overlayLabel?: { title: string; subtitle?: string } | null
+  /** When true, scroll/keyboard switching and navigation UI are disabled. */
+  disabled?: boolean
 }
 
-export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw] min-w-[280px] h-[75vh] min-h-[320px]', canvasScale = 1 }: ImageCarouselProps) {
+interface TransitionState {
+  outTween: Tween<{ t: number }>
+  inTween: Tween<{ t: number }>
+  outProxy: { t: number }
+  inProxy: { t: number }
+  incomingImg: HTMLImageElement
+  nextIndex: number
+}
+
+/* ── Inline SVG icons for navigation hints ────────────────────────── */
+
+function ArrowKeysIcon({ className }: { className?: string }) {
+  return (
+    <svg width="36" height="28" viewBox="0 0 36 28" fill="none" className={className}>
+      {/* Left key */}
+      <rect x="0.5" y="10.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M8 16L4 16M4 16L6 14M4 16L6 18" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Down key */}
+      <rect x="12.5" y="10.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M18 13L18 19M18 19L16 17M18 19L20 17" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Right key */}
+      <rect x="24.5" y="10.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M28 16L32 16M32 16L30 14M32 16L30 18" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Up key */}
+      <rect x="12.5" y="0.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M18 9L18 3M18 3L16 5M18 3L20 5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function MouseScrollIcon({ className }: { className?: string }) {
+  return (
+    <svg width="20" height="30" viewBox="0 0 20 30" fill="none" className={className}>
+      <rect x="1" y="1" width="18" height="28" rx="9" stroke="currentColor" strokeWidth="1.2" />
+      <line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M8 17L10 19L12 17" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 23L10 25L12 23" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+export function ImageCarousel({
+  images,
+  className = '',
+  sizeClassName = 'w-[90vw] min-w-[280px] h-[75vh] min-h-[320px]',
+  canvasScale = 1,
+  sectionId,
+  onIndexChange,
+  onImageClick,
+  overlayLabel,
+  disabled = false,
+}: ImageCarouselProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const clipRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<ReturnType<typeof createScene> | null>(null)
   const displayedIndexRef = useRef<number>(0)
   const settledImageRef = useRef<HTMLImageElement | null>(null)
@@ -40,8 +95,15 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
   const mountedRef = useRef(false)
   const transitionIdRef = useRef(0)
   const initLoadIdRef = useRef(0)
-  const activeTimelineRef = useRef<gsap.core.Timeline | null>(null)
   const nextTransitionRafRef = useRef<number | null>(null)
+  const transitionStateRef = useRef<TransitionState | null>(null)
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Set by the sectionId effect to prevent the currentIndex/images effect from double-triggering. */
+  const sectionChangeHandledRef = useRef(false)
+  const overlayLabelRef = useRef(overlayLabel)
+  overlayLabelRef.current = overlayLabel
+  /** Label that was baked into the currently settled slideOut texture. */
+  const displayedLabelRef = useRef(overlayLabel)
 
   const [currentIndex, setCurrentIndex] = useState(0)
 
@@ -57,10 +119,79 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
     })
   }
 
+  const settleToSlideOut = (img: HTMLImageElement, nextIndex: number) => {
+    const scene = sceneRef.current
+    if (!scene) return
+    const lbl = overlayLabelRef.current
+    scene.slideOut.setImage(compositeWithLabel(img, lbl?.title, lbl?.subtitle))
+    scene.slideOut.setTime(0)
+    scene.slideOut.mesh.visible = true
+    scene.slideIn.mesh.visible = false
+    settledImageRef.current = img
+    displayedLabelRef.current = lbl
+    displayedIndexRef.current = nextIndex
+    transitionStateRef.current = null
+    isTransitioningRef.current = false
+  }
+
+  const stopActiveTweens = () => {
+    const ts = transitionStateRef.current
+    if (!ts) return
+    ts.outTween.stop()
+    ts.inTween.stop()
+  }
+
+  const smoothInterrupt = () => {
+    const scene = sceneRef.current
+    const ts = transitionStateRef.current
+    transitionIdRef.current += 1
+    if (!scene || !ts) {
+      isTransitioningRef.current = false
+      transitionStateRef.current = null
+      return
+    }
+
+    stopActiveTweens()
+    const transitionId = transitionIdRef.current
+    const { outProxy, inProxy, incomingImg } = ts
+
+    const settleOut = new Tween(outProxy, scene.tweenGroup)
+      .to({ t: totalDuration }, SETTLE_MS)
+      .easing(Easing.Quadratic.Out)
+      .onUpdate(() => scene.slideOut.setTime(outProxy.t))
+
+    const settleIn = new Tween(inProxy, scene.tweenGroup)
+      .to({ t: totalDuration }, SETTLE_MS)
+      .easing(Easing.Quadratic.Out)
+      .onUpdate(() => scene.slideIn.setTime(inProxy.t))
+      .onComplete(() => {
+        if (!mountedRef.current || transitionId !== transitionIdRef.current) return
+        settleToSlideOut(incomingImg, -1)
+        scheduleRunNext()
+      })
+
+    transitionStateRef.current = {
+      outTween: settleOut,
+      inTween: settleIn,
+      outProxy,
+      inProxy,
+      incomingImg: ts.incomingImg,
+      nextIndex: ts.nextIndex,
+    }
+
+    settleOut.start()
+    settleIn.start()
+  }
+
   runNextTransitionRef.current = () => {
-    if (!mountedRef.current || isTransitioningRef.current) return
+    if (!mountedRef.current) return
     const currentScene = sceneRef.current
     if (!currentScene) return
+
+    if (isTransitioningRef.current) {
+      smoothInterrupt()
+      if (isTransitioningRef.current) return
+    }
 
     const nextIndex = pendingIndexRef.current
     if (nextIndex === null) return
@@ -84,64 +215,41 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
         return
       }
 
-      // slideOut is already visible with the settled image on the cloth.
-      // Prepare it for disassembly and set up slideIn with the new image.
+      // Composite old label onto slideOut (scatters away), new label onto slideIn (assembles)
       if (settledImageRef.current) {
-        currentScene.slideOut.setImage(settledImageRef.current)
+        const oldLbl = displayedLabelRef.current
+        currentScene.slideOut.setImage(compositeWithLabel(settledImageRef.current, oldLbl?.title, oldLbl?.subtitle))
       }
       currentScene.slideOut.setTime(0)
       currentScene.slideIn.setTime(0)
-      currentScene.slideIn.setImage(img)
+      const newLbl = overlayLabelRef.current
+      currentScene.slideIn.setImage(compositeWithLabel(img, newLbl?.title, newLbl?.subtitle))
       currentScene.slideIn.mesh.visible = true
 
       const outProxy = { t: 0 }
       const inProxy = { t: 0 }
 
-      const tl = gsap.timeline({
-        onComplete: () => {
-          tl.kill()
+      const outTween = new Tween(outProxy, currentScene.tweenGroup)
+        .to({ t: totalDuration }, TRANSITION_DURATION * 1000)
+        .easing(Easing.Linear.None)
+        .onUpdate(() => currentScene.slideOut.setTime(outProxy.t))
+
+      const inTween = new Tween(inProxy, currentScene.tweenGroup)
+        .to({ t: totalDuration }, TRANSITION_DURATION * 1000)
+        .easing(Easing.Linear.None)
+        .onUpdate(() => currentScene.slideIn.setTime(inProxy.t))
+        .onComplete(() => {
           if (!mountedRef.current || !sceneRef.current || transitionId !== transitionIdRef.current) {
             isTransitioningRef.current = false
             return
           }
-
-          // Transition done — swap new image onto slideOut (the settled cloth)
-          currentScene.slideOut.setImage(img)
-          currentScene.slideOut.setTime(0)
-          currentScene.slideOut.mesh.visible = true
-          currentScene.slideIn.mesh.visible = false
-
-          settledImageRef.current = img
-          displayedIndexRef.current = nextIndex
-          activeTimelineRef.current = null
-          isTransitioningRef.current = false
+          settleToSlideOut(img, nextIndex)
           scheduleRunNext()
-        },
-      })
+        })
 
-      tl.to(
-        outProxy,
-        {
-          t: totalDuration,
-          duration: TRANSITION_DURATION,
-          ease: 'none',
-          onUpdate: () => currentScene.slideOut.setTime(outProxy.t),
-        },
-        0
-      )
-
-      tl.to(
-        inProxy,
-        {
-          t: totalDuration,
-          duration: TRANSITION_DURATION,
-          ease: 'none',
-          onUpdate: () => currentScene.slideIn.setTime(inProxy.t),
-        },
-        0
-      )
-
-      activeTimelineRef.current = tl
+      transitionStateRef.current = { outTween, inTween, outProxy, inProxy, incomingImg: img, nextIndex }
+      outTween.start()
+      inTween.start()
     }, () => {
       if (transitionId !== transitionIdRef.current) return
       isTransitioningRef.current = false
@@ -167,13 +275,14 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
     const firstUrl = images[0]
     loadImage(firstUrl, (img) => {
       if (!mountedRef.current || initLoadId !== initLoadIdRef.current || !sceneRef.current) return
-      // slideOut at time=0 is the settled cloth-rippling image
-      scene.slideOut.setImage(img)
+      const lbl = overlayLabelRef.current
+      scene.slideOut.setImage(compositeWithLabel(img, lbl?.title, lbl?.subtitle))
       scene.slideOut.setTime(0)
       scene.slideOut.mesh.visible = true
       scene.slideIn.setTime(0)
       scene.slideIn.mesh.visible = false
       settledImageRef.current = img
+      displayedLabelRef.current = lbl
       displayedIndexRef.current = 0
       isReadyRef.current = true
       runNextTransitionRef.current()
@@ -183,10 +292,8 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
       resizeObserver.disconnect()
       mountedRef.current = false
       isReadyRef.current = false
-      if (activeTimelineRef.current) {
-        activeTimelineRef.current.kill()
-        activeTimelineRef.current = null
-      }
+      stopActiveTweens()
+      transitionStateRef.current = null
       pendingIndexRef.current = null
       settledImageRef.current = null
       isTransitioningRef.current = false
@@ -202,6 +309,12 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
   }, [])
 
   useEffect(() => {
+    // Skip if the sectionId effect already kicked off this transition.
+    if (sectionChangeHandledRef.current) {
+      sectionChangeHandledRef.current = false
+      return
+    }
+
     const scene = sceneRef.current
     if (!scene || !images.length) return
 
@@ -216,6 +329,32 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
     runNextTransitionRef.current()
   }, [currentIndex, images])
 
+  useEffect(() => {
+    if (!isReadyRef.current || !sceneRef.current || !images.length || !sectionId) return
+    // Signal that we're handling the section change so the currentIndex/images
+    // effect doesn't double-trigger when setCurrentIndex fires a re-render.
+    sectionChangeHandledRef.current = true
+    setCurrentIndex(0)
+    displayedIndexRef.current = -1
+    pendingIndexRef.current = 0
+    runNextTransitionRef.current()
+  }, [sectionId])
+
+  // Notify parent of index changes
+  useEffect(() => {
+    onIndexChange?.(currentIndex)
+  }, [currentIndex, onIndexChange])
+
+  // When the label text changes while idle (no transition in progress),
+  // re-composite the settled slideOut texture so the label updates immediately.
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene || !settledImageRef.current || isTransitioningRef.current) return
+    const lbl = overlayLabel
+    scene.slideOut.setImage(compositeWithLabel(settledImageRef.current, lbl?.title, lbl?.subtitle))
+    displayedLabelRef.current = lbl
+  }, [overlayLabel?.title, overlayLabel?.subtitle])
+
   const next = useCallback(() => {
     setCurrentIndex((i) => (images.length ? (i + 1) % images.length : 0))
   }, [images.length])
@@ -224,30 +363,105 @@ export function ImageCarousel({ images, className = '', sizeClassName = 'w-[90vw
     setCurrentIndex((i) => (images.length ? (i - 1 + images.length) % images.length : 0))
   }, [images.length])
 
+  // Keyboard arrow handlers
+  useEffect(() => {
+    if (disabled) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        next()
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        prev()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [next, prev, disabled])
+
+  // Mouse wheel / scroll handler (debounced)
+  useEffect(() => {
+    if (disabled) return
+    const clip = clipRef.current
+    if (!clip) return
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      if (scrollTimeoutRef.current) return
+      if (e.deltaY > 0 || e.deltaX > 0) {
+        next()
+      } else if (e.deltaY < 0 || e.deltaX < 0) {
+        prev()
+      }
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollTimeoutRef.current = null
+      }, SCROLL_DEBOUNCE_MS)
+    }
+
+    clip.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      clip.removeEventListener('wheel', handleWheel)
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+        scrollTimeoutRef.current = null
+      }
+    }
+  }, [next, prev, disabled])
+
+  const handleCanvasClick = useCallback(() => {
+    if (disabled) return
+    onImageClick?.(currentIndex)
+  }, [currentIndex, onImageClick, disabled])
+
   if (!images.length) return null
 
   return (
     <div className={`flex items-center justify-center ${className}`}>
       <div className="flex flex-col items-center gap-3">
         {/* Visible area — clips the oversized canvas */}
-        <div className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0`}>
+        <div
+          ref={clipRef}
+          className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0 cursor-pointer`}
+          onClick={handleCanvasClick}
+        >
           <div
             ref={containerRef}
             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{ width: `${canvasScale * 100}%`, height: `${canvasScale * 100}%` }}
           />
         </div>
-        <div className="relative flex flex-row items-center justify-center gap-3 p-[14px]">
+
+        {/* Navigation hints + page counter */}
+        <div
+          className="relative flex flex-row items-center justify-center gap-6 p-[14px] transition-opacity duration-300"
+          style={{ opacity: disabled ? 0 : 1, pointerEvents: disabled ? 'none' : 'auto' }}
+        >
           <CornerBorders className="w-4 h-4" />
-          <button onClick={prev} aria-label="Previous photo">
-            <PiCaretLeftBold size={24} className="text-[#1A4561] hover:text-[#E6B389]" />
-          </button>
-          <span className="text-[#1A4561] font-medium text-base tabular-nums">
-            {currentIndex + 1} / {images.length}
-          </span>
-          <button onClick={next} aria-label="Next photo">
-            <PiCaretRightBold size={24} className="text-[#1A4561] hover:text-[#E6B389]" />
-          </button>
+
+          {/* Arrow keys hint */}
+          <div className="flex flex-row items-center gap-2 text-black">
+            <ArrowKeysIcon />
+            <span className="text-xs font-noto-sans tracking-wide opacity-70">press arrow key</span>
+          </div>
+
+          {/* Prev / counter / next */}
+          <div className="flex flex-row items-center gap-3">
+            <button onClick={prev} aria-label="Previous photo">
+              <PiCaretLeftBold size={24} className="text-black hover:text-[#E6B389]" />
+            </button>
+            <span className="text-black font-medium text-base tabular-nums">
+              {String(currentIndex + 1).padStart(2, '0')} / {String(images.length).padStart(2, '0')}
+            </span>
+            <button onClick={next} aria-label="Next photo">
+              <PiCaretRightBold size={24} className="text-black hover:text-[#E6B389]" />
+            </button>
+          </div>
+
+          {/* Mouse scroll hint */}
+          <div className="flex flex-row items-center gap-2 text-black">
+            <MouseScrollIcon />
+            <span className="text-xs font-noto-sans tracking-wide opacity-70">mouse scroll</span>
+          </div>
         </div>
       </div>
     </div>
