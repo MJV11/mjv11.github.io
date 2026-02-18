@@ -1,9 +1,4 @@
-import { useNav } from '../contexts/NavContext'
-
 export const AboutPage = () => {
-    const { setCurrentPage } = useNav()
-    // black is the blue we like
-
     return (
         <div className='flex flex-col flex-1 justify-center items-center py-20'>
             <div className='flex flex-col gap-10 w-[800px] text-[32px] font-noto-sans font-bold text-black ' style={{ letterSpacing: '0.05em' }}>
@@ -23,7 +18,7 @@ export const AboutPage = () => {
                 <p>
                     I'm also an amatuer cyclist competing at the highest level of the sport in California. 
                     I love to race bikes, eat carbohydrates, and entertain my strava followers. You can
-                    <button className='hover:underline mouse-pointer' onClick={() => setCurrentPage('bikes')}><span className='text-[#E6B389]'> explore some of that here</span></button>.
+                    <a href='https://strava.com/athletes/maxvink' target='_blank' rel='noopener noreferrer' className='hover:underline mouse-pointer'><span className='text-[#E6B389]'> explore some of that here</span></a>.
                 </p>
                 <p>
                     Part of the purpose of this website is to document those skills and projects. The other purpose is to demonstrate qualities that are
@@ -35,6 +30,25 @@ export const AboutPage = () => {
                 <p>
                     As you explore, I hope this website offers insight into my hobbies and abilities, and I hope you enjoy your time here.
                 </p>
+                <div className='flex flex-col gap-4 mt-4'>
+                    <h2
+                        className="font-tusker whitespace-nowrap text-[100px] font-medium text-[#E6B389]"
+                        style={{ lineHeight: '.8', textShadow: '0px 0px 1px rgba(0, 0, 0, 0.1)' }}
+                    >
+                        contact
+                    </h2>
+                    <div className='flex flex-col gap-2 text-lg font-normal'>
+                        <a href='mailto:587max@gmail.com' className='hover:text-[#E6B389] transition-colors'>
+                            587max@gmail.com
+                        </a>
+                        <a href='https://github.com/mjv11' target='_blank' rel='noopener noreferrer' className='hover:text-[#E6B389] transition-colors'>
+                            github.com/mjv11
+                        </a>
+                        <a href='https://linkedin.com/in/maxvink' target='_blank' rel='noopener noreferrer' className='hover:text-[#E6B389] transition-colors'>
+                            linkedin.com/in/maxvink
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     )

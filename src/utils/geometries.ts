@@ -175,9 +175,12 @@ uniform float uClothTime;
 uniform float uCubeTime;
 uniform float uSegX;
 uniform float uSegY;
-uniform float uAboutMode;
+uniform float uTopMode;
 uniform float uMouseRotX;
 uniform float uMouseRotY;
+uniform float uCubeAnimFrom;
+uniform float uCubeAnimTo;
+uniform float uCubeAnimT;
 uniform vec2 uPatternGridSize;
 
 attribute vec2 aAnimation;
@@ -196,7 +199,7 @@ attribute float aPatternTile;
 varying vec2 vUv;
 varying vec3 vClothNormal;
 varying float vClothFade;
-varying float vAboutMode;
+varying float vTopMode;
 varying float vCubeFace;
 varying vec2 vPatternUv;
 
@@ -283,8 +286,9 @@ void main() {
 
   float pCols = uPatternGridSize.x;
   float pRows = uPatternGridSize.y;
-  float pCol = mod(aPatternTile, pCols);
-  float pRow = floor(aPatternTile / pCols);
+  float patternTile = mod(aCubeIndex, pCols * pRows);
+  float pCol = mod(patternTile, pCols);
+  float pRow = floor(patternTile / pCols);
   vPatternUv = vec2(pCol / pCols, pRow / pRows) + uv / vec2(pCols, pRows);
 
   // ────────────────────────────────────────────
@@ -295,7 +299,7 @@ void main() {
   vec2 clothUv = vec2(0.0);
   float clothScale = 0.0;
 
-  if (uAboutMode < 1.0) {
+  if (uTopMode < 1.0) {
     vec3 cellPos = vec3(position.x * ${cellW.toFixed(4)}, position.y * ${cellH.toFixed(4)}, position.z);
     clothUv = (aInstanceCell + uv) / vec2(uSegX, uSegY);
 
@@ -334,65 +338,317 @@ void main() {
   vec3 cubePos = vec3(0.0);
   vec3 cubeNormal = vec3(0.0, 0.0, 1.0);
 
-  if (uAboutMode > 0.0) {
+  if (uTopMode > 0.0) {
     float gridLength = 7.0;
-    float centralize = (gridLength - 1.0) / 2.0;
-    float cubeID = mod(aCubeIndex, gridLength * gridLength * gridLength);
-    float rowID = floor(cubeID / gridLength);
-    float zID = mod(rowID, gridLength) - centralize;
-    rowID = floor(rowID / gridLength) - centralize;
-    float colID = mod(cubeID, gridLength) - centralize;
-
-    float cubeScale = 9.0;
-    float faceSize = cubeScale * 2.0 / 3.0;
-    cubePos = position * faceSize;
-    cubePos = cubeFaceRot(aCubeFace) * cubePos + cubeFaceOff(aCubeFace, faceSize * 0.5);
-
-    float intervalx = mod(colID + zID + 2.0 * centralize, 2.0 * gridLength);
-    float sx = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervalx));
-    float intervaly = mod(rowID + zID + 2.0 * centralize, 2.0 * gridLength);
-    float sy = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervaly));
-    float intervalz = mod(colID + rowID + 2.0 * centralize, 2.0 * gridLength);
-    float sz = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervalz));
-
-    cubePos.x *= 0.2 * (cubeScale + sx);
-    cubePos.x += 1.2 * rowID * (cubeScale + sx);
-    cubePos.y *= 0.2 * (cubeScale + sy);
-    cubePos.y += 1.2 * colID * (cubeScale + sy);
-    cubePos.z *= 0.2 * (cubeScale + sz);
-    cubePos.z += 1.2 * zID * (cubeScale + sz);
-
-    float rad1 = 3.0 * sin(0.1 * uCubeTime);
-    float rad2 = 3.0 * sin(0.1 * (uCubeTime + 1.0));
-    cubePos = rotateVec3(cubePos, rad1, vec3(1.0, 0.0, 0.0));
-    cubePos = rotateVec3(cubePos, rad2, vec3(0.0, 1.0, 0.0));
-
-    cubeNormal = rotateVec3(
-      rotateVec3(cubeFaceRot(aCubeFace) * vec3(0.0, 0.0, 1.0), rad1, vec3(1.0, 0.0, 0.0)),
-      rad2, vec3(0.0, 1.0, 0.0)
-    );
-
+    float centralize;
     float totalCubes = gridLength * gridLength * gridLength;
+    float cubeID;
+    float rowID;
+    float zID;
+    float colID;
+
+    // Per-mode cube scales: cosine=9, scatter=7, wireframe=8, rubik=14, 4x4=6
+    float scaleFrom = 9.0;
+    if (uCubeAnimFrom > 0.5 && uCubeAnimFrom < 1.5) scaleFrom = 7.0;
+    else if (uCubeAnimFrom > 1.5 && uCubeAnimFrom < 2.5) scaleFrom = 8.0;
+    else if (uCubeAnimFrom > 2.5 && uCubeAnimFrom < 3.5) scaleFrom = 14.0;
+    else if (uCubeAnimFrom > 3.5) scaleFrom = 8.0;
+
+    float scaleTo = 9.0;
+    if (uCubeAnimTo > 0.5 && uCubeAnimTo < 1.5) scaleTo = 7.0;
+    else if (uCubeAnimTo > 1.5 && uCubeAnimTo < 2.5) scaleTo = 8.0;
+    else if (uCubeAnimTo > 2.5 && uCubeAnimTo < 3.5) scaleTo = 14.0;
+    else if (uCubeAnimTo > 3.5) scaleTo = 8.0;
+    float cubeScale = mix(scaleFrom, scaleTo, uCubeAnimT);
+
+    float faceSize = cubeScale * 2.0 / 3.0;
+    vec3 faceLocal = cubeFaceRot(aCubeFace) * (position * faceSize) + cubeFaceOff(aCubeFace, faceSize * 0.5);
+    vec3 faceNorm = cubeFaceRot(aCubeFace) * vec3(0.0, 0.0, 1.0);
+
+    // ────────────────────────────────────────────
+    // CUBE ANIM 0 — Cosine wave motion
+    // ────────────────────────────────────────────
+    vec3 gridPos = faceLocal;
+    vec3 gridNorm = faceNorm;
+    if (uCubeAnimFrom < 0.5 || uCubeAnimTo < 0.5) {
+      gridLength = 7.0;
+      centralize = (gridLength - 1.0) / 2.0;
+      totalCubes = gridLength * gridLength * gridLength;
+      cubeID = mod(aCubeIndex, totalCubes);
+      rowID = floor(cubeID / gridLength);
+      zID = mod(rowID, gridLength) - centralize;
+      rowID = floor(rowID / gridLength) - centralize;
+      colID = mod(cubeID, gridLength) - centralize;
+
+      float intervalx = mod(colID + zID + 2.0 * centralize, 2.0 * gridLength);
+      float sx = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervalx));
+      float intervaly = mod(rowID + zID + 2.0 * centralize, 2.0 * gridLength);
+      float sy = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervaly));
+      float intervalz = mod(colID + rowID + 2.0 * centralize, 2.0 * gridLength);
+      float sz = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervalz));
+      gridPos.x *= 0.2 * (cubeScale + sx);
+      gridPos.x += 1.2 * rowID * (cubeScale + sx);
+      gridPos.y *= 0.2 * (cubeScale + sy);
+      gridPos.y += 1.2 * colID * (cubeScale + sy);
+      gridPos.z *= 0.2 * (cubeScale + sz);
+      gridPos.z += 1.2 * zID * (cubeScale + sz);
+      float gRad1 = 3.0 * sin(0.1 * uCubeTime);
+      float gRad2 = 3.0 * sin(0.1 * (uCubeTime + 1.0));
+      gridPos = rotateVec3(gridPos, gRad1, vec3(1.0, 0.0, 0.0));
+      gridPos = rotateVec3(gridPos, gRad2, vec3(0.0, 1.0, 0.0));
+      gridNorm = rotateVec3(rotateVec3(faceNorm, gRad1, vec3(1.0, 0.0, 0.0)), gRad2, vec3(0.0, 1.0, 0.0));
+    }
+
+    // ────────────────────────────────────────────
+    // CUBE ANIM 1 — Scatter
+    // ────────────────────────────────────────────
+    vec3 scatterPos = faceLocal;
+    vec3 scatterNorm = faceNorm;
+    if ((uCubeAnimFrom > 0.5 && uCubeAnimFrom < 1.5) || (uCubeAnimTo > 0.5 && uCubeAnimTo < 1.5)) {
+      scatterPos *= 2.0;
+      float sRad1 = PI * 2.0 * sin(uCubeTime + aCubeRandoms.x);
+      float sRad2 = PI * 2.0 * sin(uCubeTime + aCubeRandoms.y);
+      vec3 cubeCenterTo = aCubeRandoms * 100.0;
+      scatterPos += cubeCenterTo;
+
+      // Per-cube wandering: a few cubes glide to new offsets at staggered times
+      float wanderSpeed = 0.15; // speed of the wandering motion
+      float wanderMin = 15.0;
+      float wanderMax = 30.0;
+      float wanderPhase = uCubeTime * wanderSpeed + aCubeRandoms.z * 17.0;
+      float wStep = floor(wanderPhase);
+      float wT = smoothstep(0.0, 0.15, fract(wanderPhase));
+      float rwx0 = sin(wStep * 127.1 + aCubeRandoms.y * 311.7);
+      float rwy0 = sin(wStep * 269.5 + aCubeRandoms.z * 183.3);
+      float rwx1 = sin((wStep + 1.0) * 127.1 + aCubeRandoms.y * 311.7);
+      float rwy1 = sin((wStep + 1.0) * 269.5 + aCubeRandoms.z * 183.3);
+      float wx0 = sign(rwx0) * mix(wanderMin, wanderMax, abs(rwx0));
+      float wy0 = sign(rwy0) * mix(wanderMin, wanderMax, abs(rwy0));
+      float wx1 = sign(rwx1) * mix(wanderMin, wanderMax, abs(rwx1));
+      float wy1 = sign(rwy1) * mix(wanderMin, wanderMax, abs(rwy1));
+      float wanderAxis = step(0.5, fract(aCubeRandoms.x * 7.3));
+      scatterPos.x += mix(wx0, wx1, wT) * (1.0 - wanderAxis);
+      scatterPos.y += mix(wy0, wy1, wT) * wanderAxis;
+
+      scatterPos = rotateVec3(scatterPos, uCubeTime * 0.3, vec3(0.3, 1.0, 0.2));
+    }
+
+    // ────────────────────────────────────────────
+    // CUBE ANIM 2 — Wireframe
+    // ────────────────────────────────────────────
+    vec3 wirePos = faceLocal;
+    vec3 wireNorm = faceNorm;
+    if ((uCubeAnimFrom > 1.5 && uCubeAnimFrom < 2.5) || (uCubeAnimTo > 1.5 && uCubeAnimTo < 2.5)) {
+      gridLength = 11.0;
+      centralize = (gridLength - 1.0) / 2.0;
+      totalCubes = gridLength * gridLength * gridLength;
+      cubeID = mod(aCubeIndex, totalCubes);
+      rowID = floor(cubeID / gridLength);
+      zID = mod(rowID, gridLength) - centralize;
+      rowID = floor(rowID / gridLength) - centralize;
+      colID = mod(cubeID, gridLength) - centralize;
+      
+      float onCol = step(centralize - 1.5, abs(colID)); // check if the cube is on the edge of the grid
+      float onRow = step(centralize - 1.5, abs(rowID));
+      float onZ   = step(centralize - 1.5, abs(zID));
+      float isEdge = step(1.5, onCol + onRow + onZ);
+
+      float wireSpacing = 1.065;
+      wirePos.x *= 0.2 * cubeScale;
+      wirePos.x += wireSpacing * rowID * cubeScale;
+      wirePos.y *= 0.2 * cubeScale;
+      wirePos.y += wireSpacing * colID * cubeScale;
+      wirePos.z *= 0.2 * cubeScale;
+      wirePos.z += wireSpacing * zID * cubeScale;
+
+      float wR1 = 0.4 * sin(0.15 * uCubeTime);
+      float wR2 = 0.4 * sin(0.15 * (uCubeTime + 2.0));
+      wirePos = rotateVec3(wirePos, wR1, vec3(1.0, 0.0, 0.0));
+      wirePos = rotateVec3(wirePos, wR2, vec3(0.0, 1.0, 0.0));
+      wireNorm = rotateVec3(rotateVec3(faceNorm, wR1, vec3(1.0, 0.0, 0.0)), wR2, vec3(0.0, 1.0, 0.0));
+
+      wirePos *= isEdge;
+    }
+
+    // ────────────────────────────────────────────
+    // CUBE ANIM 3 — Rubik's cube
+    // ────────────────────────────────────────────
+    vec3 rubikPos = faceLocal;
+    vec3 rubikNorm = faceNorm;
+    if ((uCubeAnimFrom > 2.5 && uCubeAnimFrom < 3.5) || (uCubeAnimTo > 2.5 && uCubeAnimTo < 3.5)) {
+      float rGrid = 3.0;
+      float rCent = 1.0;
+      float rTotal = 27.0;
+      float isRubikCube = step(aCubeIndex + 0.5, rTotal);
+      float rID = mix(13.0, aCubeIndex, isRubikCube);
+      float rCol = mod(rID, rGrid) - rCent;
+      float rRow = mod(floor(rID / rGrid), rGrid) - rCent;
+      float rZ   = floor(rID / (rGrid * rGrid)) - rCent;
+
+      float rSpacing = 1.9;
+      rubikPos.x *= 0.2 * cubeScale;
+      rubikPos.x += rSpacing * rRow * cubeScale;
+      rubikPos.y *= 0.2 * cubeScale;
+      rubikPos.y += rSpacing * rCol * cubeScale;
+      rubikPos.z *= 0.2 * cubeScale;
+      rubikPos.z += rSpacing * rZ * cubeScale;
+
+      float moveSpeed = 1.0;
+      float movePhase = uCubeTime * moveSpeed;
+      float totalMovesF = floor(movePhase);
+      float moveT = fract(movePhase);
+      float easeT = moveT * moveT * (3.0 - 2.0 * moveT);
+
+      int nCompleted = int(mod(totalMovesF, 128.0));
+      float cRow = rRow;
+      float cCol = rCol;
+      float cZ = rZ;
+
+      for (int i = 0; i < 128; i++) {
+        if (i >= nCompleted) break;
+        float mi = float(i);
+        float aF = mod(floor(abs(sin(mi * 73.13)) * 97.0), 3.0);
+        float lF = mod(floor(abs(sin(mi * 127.1)) * 113.0), 3.0) - 1.0;
+        float d = sign(sin(mi * 311.7 + 0.5));
+
+        float inS = 0.0;
+        vec3 sAxis = vec3(0.0);
+        if (aF < 0.5)      { inS = step(abs(cRow - lF), 0.5); sAxis = vec3(1.0, 0.0, 0.0); }
+        else if (aF < 1.5)  { inS = step(abs(cCol - lF), 0.5); sAxis = vec3(0.0, 1.0, 0.0); }
+        else                 { inS = step(abs(cZ - lF), 0.5);   sAxis = vec3(0.0, 0.0, 1.0); }
+
+        rubikPos = rotateVec3(rubikPos, inS * PI * 0.5 * d, sAxis);
+        rubikNorm = rotateVec3(rubikNorm, inS * PI * 0.5 * d, sAxis);
+
+        float nR = cRow, nC = cCol, nZ = cZ;
+        if (aF < 0.5) {
+          nC = mix(cCol, mix(-cZ, cZ, step(d, 0.0)), inS);
+          nZ = mix(cZ, mix(cCol, -cCol, step(d, 0.0)), inS);
+        } else if (aF < 1.5) {
+          nR = mix(cRow, mix(cZ, -cZ, step(d, 0.0)), inS);
+          nZ = mix(cZ, mix(-cRow, cRow, step(d, 0.0)), inS);
+        } else {
+          nR = mix(cRow, mix(-cCol, cCol, step(d, 0.0)), inS);
+          nC = mix(cCol, mix(cRow, -cRow, step(d, 0.0)), inS);
+        }
+        cRow = nR; cCol = nC; cZ = nZ;
+      }
+
+      float curMi = float(nCompleted);
+      float curAF = mod(floor(abs(sin(curMi * 73.13)) * 97.0), 3.0);
+      float curLF = mod(floor(abs(sin(curMi * 127.1)) * 113.0), 3.0) - 1.0;
+      float curD = sign(sin(curMi * 311.7 + 0.5));
+      float curAngle = easeT * PI * 0.5 * curD;
+
+      float curInSlice = 0.0;
+      vec3 curSliceAxis = vec3(0.0);
+      if (curAF < 0.5)      { curInSlice = step(abs(cRow - curLF), 0.5); curSliceAxis = vec3(1.0, 0.0, 0.0); }
+      else if (curAF < 1.5)  { curInSlice = step(abs(cCol - curLF), 0.5); curSliceAxis = vec3(0.0, 1.0, 0.0); }
+      else                    { curInSlice = step(abs(cZ - curLF), 0.5);   curSliceAxis = vec3(0.0, 0.0, 1.0); }
+
+      rubikPos = rotateVec3(rubikPos, curAngle * curInSlice, curSliceAxis);
+      rubikNorm = rotateVec3(rubikNorm, curAngle * curInSlice, curSliceAxis);
+
+      float rbR1 = 3.7 * sin(0.1 * uCubeTime);
+      float rbR2 = 3.7 * sin(0.1 * (uCubeTime + 1.5));
+      rubikPos = rotateVec3(rubikPos, rbR1, vec3(1.0, 0.0, 0.0));
+      rubikPos = rotateVec3(rubikPos, rbR2, vec3(0.0, 1.0, 0.0));
+      rubikNorm = rotateVec3(rotateVec3(rubikNorm, rbR1, vec3(1.0, 0.0, 0.0)), rbR2, vec3(0.0, 1.0, 0.0));
+
+      rubikPos *= isRubikCube;
+      totalCubes = 99999.0;
+    }
+
+    // ────────────────────────────────────────────
+    // CUBE ANIM 4 — 4x4 (2x2x2 of 3x3x3 wireframe cubes)
+    // ────────────────────────────────────────────
+    vec3 fourPos = faceLocal;
+    vec3 fourNorm = faceNorm;
+    if (uCubeAnimFrom > 3.5 || uCubeAnimTo > 3.5) {
+      float wGrid = 3.0;
+      float wCent = 1.0;
+      float wTotal = wGrid * wGrid * wGrid;
+
+      float wfID = floor(aCubeIndex / wTotal);
+      float isInEight = step(wfID + 0.5, 8.0);
+      float localIdx = mod(aCubeIndex, wTotal);
+
+      float lRow = floor(localIdx / wGrid);
+      float lZ   = mod(lRow, wGrid) - wCent;
+      lRow = floor(lRow / wGrid) - wCent;
+      float lCol = mod(localIdx, wGrid) - wCent;
+
+      float onCol = step(wCent - 0.5, abs(lCol));
+      float onRow = step(wCent - 0.5, abs(lRow));
+      float onZ   = step(wCent - 0.5, abs(lZ));
+      float isEdge = step(1.5, onCol + onRow + onZ);
+
+      float wireSpacing = 1.065;
+      fourPos.x *= 0.2 * cubeScale;
+      fourPos.x += wireSpacing * lRow * cubeScale;
+      fourPos.y *= 0.2 * cubeScale;
+      fourPos.y += wireSpacing * lCol * cubeScale;
+      fourPos.z *= 0.2 * cubeScale;
+      fourPos.z += wireSpacing * lZ * cubeScale;
+
+      float superSpacing = (wGrid + 1.0) * wireSpacing * cubeScale;
+      float wfX = mod(wfID, 2.0) - 0.5;
+      float wfY = mod(floor(wfID / 2.0), 2.0) - 0.5;
+      float wfZ = floor(wfID / 4.0) - 0.5;
+      fourPos.x += wfX * superSpacing;
+      fourPos.y += wfY * superSpacing;
+      fourPos.z += wfZ * superSpacing;
+
+      float fR1 = 0.3 * sin(0.12 * uCubeTime);
+      float fR2 = 0.3 * sin(0.12 * (uCubeTime + 2.0));
+      fourPos = rotateVec3(fourPos, fR1, vec3(1.0, 0.0, 0.0));
+      fourPos = rotateVec3(fourPos, fR2, vec3(0.0, 1.0, 0.0));
+      fourNorm = rotateVec3(rotateVec3(faceNorm, fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
+
+      fourPos *= isEdge * isInEight;
+      totalCubes = 99999.0;
+    }
+
+    // ────────────────────────────────────────────
+    // CUBE ANIM BLEND — from/to direct transition
+    // ────────────────────────────────────────────
+    vec3 posFrom = gridPos;
+    vec3 normFrom = gridNorm;
+    if (uCubeAnimFrom > 0.5 && uCubeAnimFrom < 1.5) { posFrom = scatterPos; normFrom = scatterNorm; }
+    else if (uCubeAnimFrom > 1.5 && uCubeAnimFrom < 2.5) { posFrom = wirePos; normFrom = wireNorm; }
+    else if (uCubeAnimFrom > 2.5 && uCubeAnimFrom < 3.5) { posFrom = rubikPos; normFrom = rubikNorm; }
+    else if (uCubeAnimFrom > 3.5) { posFrom = fourPos; normFrom = fourNorm; }
+
+    vec3 posTo = gridPos;
+    vec3 normTo = gridNorm;
+    if (uCubeAnimTo > 0.5 && uCubeAnimTo < 1.5) { posTo = scatterPos; normTo = scatterNorm; }
+    else if (uCubeAnimTo > 1.5 && uCubeAnimTo < 2.5) { posTo = wirePos; normTo = wireNorm; }
+    else if (uCubeAnimTo > 2.5 && uCubeAnimTo < 3.5) { posTo = rubikPos; normTo = rubikNorm; }
+    else if (uCubeAnimTo > 3.5) { posTo = fourPos; normTo = fourNorm; }
+
+    cubePos = mix(posFrom, posTo, uCubeAnimT);
+    cubeNormal = normalize(mix(normFrom, normTo, uCubeAnimT));
+
     cubePos *= step(aCubeIndex + 0.5, totalCubes);
   }
 
   // ────────────────────────────────────────────
   // BLEND between modes
   // ────────────────────────────────────────────
-  if (uAboutMode <= 0.0) {
+  if (uTopMode <= 0.0) {
     pos = clothPos;
     normal = clothNormal;
     texUv = clothUv;
     fade = clothScale;
     blend = 0.0;
-  } else if (uAboutMode >= 1.0) {
+  } else if (uTopMode >= 1.0) {
     pos = cubePos;
     normal = cubeNormal;
     texUv = vec2(0.0);
     fade = 0.0;
     blend = 1.0;
   } else {
-    float Tween = getAnimationValue(uAboutMode, aCubeRandoms.x);
+    float Tween = getAnimationValue(uTopMode, aCubeRandoms.x);
     pos = mix(clothPos, cubePos, Tween);
     normal = mix(clothNormal, cubeNormal, Tween);
     texUv = mix(clothUv, vec2(0.0), Tween);
@@ -402,7 +658,7 @@ void main() {
 
   vUv = texUv;
   vClothFade = fade;
-  vAboutMode = blend;
+  vTopMode = blend;
 
   pos = mouseRot * pos;
   vClothNormal = mouseRot * normal;
@@ -425,7 +681,7 @@ uniform vec3 uCubeBgColor;
 varying vec2 vUv;
 varying vec3 vClothNormal;
 varying float vClothFade;
-varying float vAboutMode;
+varying float vTopMode;
 varying float vCubeFace;
 varying vec2 vPatternUv;
 
@@ -443,7 +699,7 @@ void main() {
   vec3 cubeBaseColor = mix(uCubeBgColor, uCubeColor, pattern);
   vec4 cubeCol = vec4(cubeBaseColor * cubeLighting, 1.0);
 
-  if (vAboutMode > 0.999) {
+  if (vTopMode > 0.999) {
     gl_FragColor = cubeCol;
     return;
   }
@@ -483,7 +739,7 @@ void main() {
   float lighting = 0.78 + 0.22 * diffuse;
 
   vec4 clothCol = vec4(texColor.rgb * lighting * fabric, texColor.a);
-  gl_FragColor = mix(clothCol, cubeCol, vAboutMode);
+  gl_FragColor = mix(clothCol, cubeCol, vTopMode);
 }
 `
 
@@ -509,9 +765,12 @@ function createSlideMaterial(phase: 'in' | 'out'): THREE.ShaderMaterial {
       uCubeTime: { value: 0 },
       uSegX: { value: segX },
       uSegY: { value: segY },
-      uAboutMode: { value: 0 },
+      uTopMode: { value: 0 },
       uMouseRotX: { value: 0 },
       uMouseRotY: { value: 0 },
+      uCubeAnimFrom: { value: 0 },
+      uCubeAnimTo: { value: 0 },
+      uCubeAnimT: { value: 0 },
       uCubeColor: { value: new THREE.Color(0xaaaaaa) },
       uCubeBgColor: { value: new THREE.Color(0xfafafa) },
       uPatternAtlas: { value: _defaultAtlasTex },
@@ -536,7 +795,7 @@ interface SlideMesh {
   setImage(image: HTMLImageElement | HTMLCanvasElement): void
   setViewAspect(aspect: number): void
   setTime(t: number): void
-  setAboutMode(on: boolean): void
+  setTopMode(on: boolean): void
   setMouseRotation(rx: number, ry: number): void
   getImageAspect(): number
 }
@@ -586,7 +845,7 @@ function createSlide(phase: 'in' | 'out'): SlideMesh {
     setTime(t: number) {
       material.uniforms.uTime.value = t
     },
-    setAboutMode(on: boolean) {
+    setTopMode(on: boolean) {
       material.depthWrite = on
       material.depthTest = on
     },
@@ -766,8 +1025,10 @@ export function createScene(container: HTMLElement) {
   }
   tick()
 
-  let aboutModeTween: TWEEN.Tween<{ v: number }> | null = null
-  const aboutProxy = { v: 0 }
+  let topModeTween: TWEEN.Tween<{ v: number }> | null = null
+  const topProxy = { v: 0 }
+  let cubeAnimTween: TWEEN.Tween<{ t: number }> | null = null
+  let cubeAnimCurrent = 0
 
   function resize() {
     const w = container.clientWidth
@@ -790,7 +1051,7 @@ export function createScene(container: HTMLElement) {
     const cubeSU = (viewHeight / height) * sizeFactor
 
     // Blend between cloth and cube scale using the current tween value
-    const t = aboutProxy.v
+    const t = topProxy.v
     const sx = clothSX + (cubeSU - clothSX) * t
     const sy = clothSY + (cubeSU - clothSY) * t
     const sz = 1 + (cubeSU - 1) * t
@@ -805,21 +1066,21 @@ export function createScene(container: HTMLElement) {
   window.addEventListener('resize', resize)
   resize()
 
-  function setAboutMode(on: boolean) {
-    if (aboutModeTween) aboutModeTween.stop()
+  function setTopMode(on: boolean) {
+    if (topModeTween) topModeTween.stop()
 
     const target = on ? 1 : 0
-    aboutModeTween = new TWEEN.Tween(aboutProxy, tweenGroup)
+    topModeTween = new TWEEN.Tween(topProxy, tweenGroup)
       .to({ v: target }, 2500)
       .easing(TWEEN.Easing.Quadratic.InOut)
       .onUpdate(() => {
-        const v = aboutProxy.v
-        ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uAboutMode.value = v
-        ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uAboutMode.value = v
+        const v = topProxy.v
+        ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uTopMode.value = v
+        ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uTopMode.value = v
         // Enable depth for 3D cubes when any cube is visible
         const depthOn = v > 0.01
-        slideOut.setAboutMode(depthOn)
-        slideIn.setAboutMode(depthOn)
+        slideOut.setTopMode(depthOn)
+        slideIn.setTopMode(depthOn)
         // Push slideOut fragments slightly deeper to prevent z-fighting with slideIn
         const outMat = slideOut.mesh.material as THREE.ShaderMaterial
         outMat.polygonOffset = v > 0.5
@@ -845,8 +1106,36 @@ export function createScene(container: HTMLElement) {
     slideIn,
     tweenGroup,
     resize,
-    setAboutMode,
+    setTopMode,
     setMouseRotation,
+    setCubeAnimation(mode: number) {
+      if (cubeAnimTween) cubeAnimTween.stop()
+      const from = cubeAnimCurrent
+      const outU = (slideOut.mesh.material as THREE.ShaderMaterial).uniforms
+      const inU = (slideIn.mesh.material as THREE.ShaderMaterial).uniforms
+      outU.uCubeAnimFrom.value = from
+      outU.uCubeAnimTo.value = mode
+      inU.uCubeAnimFrom.value = from
+      inU.uCubeAnimTo.value = mode
+      const proxy = { t: 0 }
+      cubeAnimTween = new TWEEN.Tween(proxy, tweenGroup)
+        .to({ t: 1 }, 1500)
+        .easing(TWEEN.Easing.Quadratic.InOut)
+        .onUpdate(() => {
+          outU.uCubeAnimT.value = proxy.t
+          inU.uCubeAnimT.value = proxy.t
+        })
+        .onComplete(() => {
+          cubeAnimCurrent = mode
+          outU.uCubeAnimFrom.value = mode
+          outU.uCubeAnimTo.value = mode
+          outU.uCubeAnimT.value = 0
+          inU.uCubeAnimFrom.value = mode
+          inU.uCubeAnimTo.value = mode
+          inU.uCubeAnimT.value = 0
+        })
+        .start()
+    },
     setPatternAtlas(tex: THREE.Texture) {
       const outMat = slideOut.mesh.material as THREE.ShaderMaterial
       const inMat = slideIn.mesh.material as THREE.ShaderMaterial

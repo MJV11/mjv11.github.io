@@ -40,6 +40,7 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
           { key: 'type', value: work.type },
           { key: 'role', value: work.role },
           { key: 'tech', value: work.tech },
+          { key: 'buzzwords', value: work.buzzwords },
         ].map((item) => (
           <div className={`flex flex-row items-start gap-1 ${work.colors[item.key].label}`}>
             <span className="pr-2">{item.key}</span>

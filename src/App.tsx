@@ -1,4 +1,4 @@
-import { Bikes, Nav, AboutPage, ImageCarousel, WorkItem, MosaicBackground, LoadingScreen } from './components'
+import { Nav, AboutPage, ImageCarousel, WorkItem, MosaicBackground, LoadingScreen } from './components'
 import { useNav } from './contexts/NavContext'
 import { usePortfolioImagesContext } from './contexts/PortfolioImagesContext'
 import { SECTIONS_WITH_IMAGES } from './config/portfolioImages'
@@ -8,8 +8,8 @@ function App() {
   const { currentPage } = useNav()
   const { imagesBySection, isReady } = usePortfolioImagesContext()
   const hasCarouselSection = (SECTIONS_WITH_IMAGES as readonly string[]).includes(currentPage)
-  const isAboutPage = currentPage === 'about'
-  const showCarousel = hasCarouselSection || isAboutPage
+  const isTopPage = currentPage === 'top'
+  const showCarousel = hasCarouselSection || isTopPage
   const isWorksPage = currentPage === 'works'
 
   const carouselImages =
@@ -28,7 +28,7 @@ function App() {
     <div className='fixed inset-0 flex flex-col overflow-hidden'>
       <LoadingScreen isVisible={!isReady} />
       <MosaicBackground />
-      <div className='absolute top-0 left-0 right-0 p-[14px] z-20 flex justify-center pointer-events-none'>
+      <div className='absolute top-0 right-0 p-[14px] z-20 flex justify-center pointer-events-none'>
         <div className='pointer-events-auto'>
           <Nav />
         </div>
@@ -69,15 +69,14 @@ function App() {
                   onIndexChange={handleIndexChange}
                   onImageClick={handleImageClick}
                   getLabelForIndex={getLabelForIndex}
-                  disabled={isExpanded || isAboutPage}
-                  isAboutMode={isAboutPage}
+                  disabled={isExpanded || isTopPage}
+                  isTopMode={isTopPage}
                 />
               </div>
             </div>
           </div>
         )}
         {currentPage === 'about' && <AboutPage />}
-        {currentPage === 'bikes' && <Bikes />}
       </main>
     </div>
   )

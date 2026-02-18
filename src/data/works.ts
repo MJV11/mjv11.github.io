@@ -8,6 +8,7 @@ export interface Work {
   role: string[]
   tech: string[]
   type: string[]
+  buzzwords: string[]
   site?: string
   source?: string
   videos?: string[]
@@ -25,6 +26,7 @@ export const works: Work[] = [
     image: 'silicon.png',
     role: ['Frontend', 'Design', 'Backend'],
     tech: ['TypeScript', 'React', 'Tailwind CSS', 'Solidity', 'PostgreSQL', 'Supabase', 'AWS Lambda', 'Netlify', 'Ethereum'],
+    buzzwords: ['Datacenters', 'Blockchain', 'Smart Contracts', 'Decentralized', 'Web3', 'AI', 'Fintech'],
     videos: [],
     colors: {
       title: 'bg-purple-600 text-white',
@@ -40,6 +42,10 @@ export const works: Work[] = [
         label: 'text-green-600',
         bg: 'bg-green-600 text-white',
       },
+      buzzwords: {
+        label: 'text-green-600',
+        bg: 'bg-green-600 text-white',
+      },
       site: 'hover:bg-purple-600 text-black border-purple-600',
       description: 'border-purple-600',
     },
@@ -47,7 +53,7 @@ export const works: Work[] = [
   },
   {
     id: 'copytrading',
-    type: ['Web App'],
+    type: ['Web App, Script'],
     site: 'copytradingbotsarescams.netlify.app',
     source: 'https://github.com/mjv11/copytrading',
     title: 'Copytrading Scams',
@@ -55,6 +61,7 @@ export const works: Work[] = [
     image: 'copytrading.png',
     role: ['Frontend', 'Design', 'Backend'],
     tech: ['TypeScript', 'Tailwind CSS', 'Ethereum', 'React', 'PostgreSQL'],
+    buzzwords: ['Copytrading', 'Polymarket', 'Bots', 'Blockchain'],
     videos: [],
     colors: {
       title: 'bg-blue-600 text-white',
@@ -67,6 +74,10 @@ export const works: Work[] = [
         bg: 'bg-blue-600 text-white',
       },
       tech: {
+        label: 'text-blue-600',
+        bg: 'bg-blue-600 text-white',
+      },
+      buzzwords: {
         label: 'text-blue-600',
         bg: 'bg-blue-600 text-white',
       },
@@ -86,6 +97,7 @@ export const works: Work[] = [
     image: 'oldportfolio.png',
     role: ['Frontend', 'Design'],
     tech: ['JavaScript', 'HTML/CSS', 'Three.js', 'GLSL', 'GSAP'],
+    buzzwords: ['Portfolio', '3D', 'Animation'],
     videos: [],
     colors: {
       title: 'bg-[#72fafc] text-black',
@@ -98,6 +110,10 @@ export const works: Work[] = [
         bg: 'bg-[#f5d922] text-black',
       },
       tech: {
+        label: 'text-orange-400',
+        bg: 'bg-orange-400 text-black',
+      },
+      buzzwords: {
         label: 'text-[#fc6262]',
         bg: 'bg-[#fc6262] text-black',
       },

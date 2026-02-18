@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { Tween, Easing } from '@tweenjs/tween.js'
-import { PiCaretRightBold, PiCaretLeftBold } from 'react-icons/pi'
-import { CornerBorders } from '../utils'
-import { createScene, compositeWithLabel, totalDuration, TRANSITION_DURATION } from '../utils/slideTransition'
+import { PiCaretRightBold, PiCaretLeftBold, PiCaretUpBold, PiCaretDownBold } from 'react-icons/pi'
+import { createScene, compositeWithLabel, totalDuration, TRANSITION_DURATION } from '../utils/geometries'
 import { useColor } from '../contexts/ColorContext'
 import { getAtlasCanvas } from '../utils/mosaicPatterns'
 
 /** Duration (ms) for the "rush to completion" settle when interrupted mid-transition. */
 const SETTLE_MS = 400
+const CUBE_ANIM_LABELS = ['cosine', 'scatter', 'wireframe', 'rubik', '4x4'] as const
 const SCROLL_DEBOUNCE_MS = 300
 
 /** Mouse-tilt effect constants */
@@ -39,8 +39,8 @@ interface ImageCarouselProps {
   getLabelForIndex?: (index: number) => { title: string; subtitle?: string } | null
   /** When true, scroll/keyboard switching and navigation UI are disabled. */
   disabled?: boolean
-  /** When true, renders as a field of rotating cubes (about page mode). */
-  isAboutMode?: boolean
+  /** When true, renders as a field of rotating cubes (top page mode). */
+  isTopMode?: boolean
 }
 
 interface TransitionState {
@@ -56,19 +56,19 @@ interface TransitionState {
 
 function ArrowKeysIcon({ className }: { className?: string }) {
   return (
-    <svg width="36" height="28" viewBox="0 0 36 28" fill="none" className={className}>
+    <svg width="40" height="27" viewBox="-0.5 -3 40 27" fill="none" className={className}>
       {/* Left key */}
-      <rect x="0.5" y="10.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
-      <path d="M8 16L4 16M4 16L6 14M4 16L6 18" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="1" y="11" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M8.5 16.5L4.5 16.5M4.5 16.5L6.5 14.5M4.5 16.5L6.5 18.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
       {/* Down key */}
-      <rect x="12.5" y="10.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
-      <path d="M18 13L18 19M18 19L16 17M18 19L20 17" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="14" y="11" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M19.5 14.5L19.5 18.5M19.5 18.5L17.5 16.5M19.5 18.5L21.5 16.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
       {/* Right key */}
-      <rect x="24.5" y="10.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
-      <path d="M28 16L32 16M32 16L30 14M32 16L30 18" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="27" y="11" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M30.5 16.5L34.5 16.5M34.5 16.5L32.5 14.5M34.5 16.5L32.5 18.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
       {/* Up key */}
-      <rect x="12.5" y="0.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
-      <path d="M18 9L18 3M18 3L16 5M18 3L20 5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="14" y="-1.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1" />
+      <path d="M19.5 6L19.5 2M19.5 2L17.5 4M19.5 2L21.5 4" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -77,9 +77,8 @@ function MouseScrollIcon({ className }: { className?: string }) {
   return (
     <svg width="20" height="30" viewBox="0 0 20 30" fill="none" className={className}>
       <rect x="1" y="1" width="18" height="28" rx="9" stroke="currentColor" strokeWidth="1.2" />
-      <line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M8 17L10 19L12 17" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8 23L10 25L12 23" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="10" y1="7" x2="10" y2="16" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M8 20L10 23L12 20" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -141,7 +140,7 @@ export function ImageCarousel({
   onImageClick,
   getLabelForIndex,
   disabled = false,
-  isAboutMode = false,
+  isTopMode = false,
 }: ImageCarouselProps) {
   const { palette } = useColor()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -175,6 +174,8 @@ export function ImageCarousel({
   const compositedCacheRef = useRef<Map<string, HTMLCanvasElement>>(new Map())
 
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [cubeAnimMode, setCubeAnimMode] = useState(0)
+  const [randomMode, setRandomMode] = useState(true)
 
   const runNextTransitionRef = useRef<() => void>(() => { })
 
@@ -434,10 +435,9 @@ export function ImageCarousel({
     runNextTransitionRef.current()
   }, [sectionId])
 
-  // Sync about mode to the scene
   useEffect(() => {
-    sceneRef.current?.setAboutMode(isAboutMode)
-  }, [isAboutMode])
+    sceneRef.current?.setTopMode(isTopMode)
+  }, [isTopMode])
 
   // Sync cube colors with palette
   useEffect(() => {
@@ -447,10 +447,36 @@ export function ImageCarousel({
     )
   }, [palette])
 
+  // Sync cube animation mode
+  useEffect(() => {
+    sceneRef.current?.setCubeAnimation(cubeAnimMode)
+  }, [cubeAnimMode])
+
+  // Random mode: pick a new animation every 8s (never the same twice in a row)
+  useEffect(() => {
+    if (!randomMode) return
+    const id = setInterval(() => {
+      setCubeAnimMode(prev => {
+        let next: number
+        do { next = Math.floor(Math.random() * CUBE_ANIM_LABELS.length) } while (next === prev && CUBE_ANIM_LABELS.length > 1)
+        return next
+      })
+    }, 8000)
+    return () => clearInterval(id)
+  }, [randomMode])
+
   // Notify parent of index changes
   useEffect(() => {
     onIndexChange?.(currentIndex)
   }, [currentIndex, onIndexChange])
+
+  const nextAnim = useCallback(() => {
+    setCubeAnimMode(m => (m + 1) % CUBE_ANIM_LABELS.length)
+  }, [])
+
+  const prevAnim = useCallback(() => {
+    setCubeAnimMode(m => (m - 1 + CUBE_ANIM_LABELS.length) % CUBE_ANIM_LABELS.length)
+  }, [])
 
   const next = useCallback(() => {
     setCurrentIndex((i) => (images.length ? (i + 1) % images.length : 0))
@@ -567,7 +593,7 @@ export function ImageCarousel({
   if (!images.length) return null
 
   return (
-    <div className={`relative flex items-center justify-center ${className}`}>
+    <div className={`relative flex items-center justify-center ${className} h-full`}>
       <div ref={tiltWrapRef}>
         <div
           ref={clipRef}
@@ -582,31 +608,59 @@ export function ImageCarousel({
         </div>
       </div>
 
+      {/* Cube animation mode selector — top page only */}
+      <div
+        className="absolute bottom-[40%] right-[28px] z-30 w-[80px] flex flex-col items-center gap-3 transition-opacity duration-500"
+        style={{ opacity: isTopMode ? 1 : 0, pointerEvents: isTopMode ? 'auto' : 'none' }}
+      >
+        <span className="px-2 py-1 text-[11px] font-noto-sans tracking-widest uppercase opacity-50 text-black text-center">
+          Animation Pattern
+        </span>
+        <button onClick={prevAnim} disabled={randomMode} aria-label="Previous animation">
+          <PiCaretUpBold size={18} className={randomMode ? 'text-black/10 cursor-default' : 'text-black hover:text-gray-400'} />
+        </button>
+        <div className="flex flex-col items-center gap-0.5">
+          <DialCounter current={cubeAnimMode + 1} total={CUBE_ANIM_LABELS.length} />
+          <span className="text-[10px] font-noto-sans tracking-widest uppercase opacity-50 text-black text-center whitespace-nowrap">
+            {CUBE_ANIM_LABELS[cubeAnimMode]}
+          </span>
+        </div>
+        <button onClick={nextAnim} disabled={randomMode} aria-label="Next animation">
+          <PiCaretDownBold size={18} className={randomMode ? 'text-black/10 cursor-default' : 'text-black hover:text-gray-400'} />
+        </button>
+        <button
+          onClick={() => setRandomMode(r => !r)}
+          className={`mt-1 px-2 py-1 text-[8px] font-noto-sans tracking-[0.15em] uppercase border transition-all duration-300 ${randomMode
+              ? 'bg-black text-white border-black '
+              : 'bg-transparent text-black border-black'
+            } hover:opacity-70`}
+          aria-label="Toggle random mode"
+        >
+          random: {randomMode ? 'on' : 'off'}
+        </button>
+      </div>
+
       {/* Navigation hints + page counter — overlaid at the bottom */}
       <div
-        className="absolute bottom-[28px] left-1/2 -translate-x-1/2 p-[14px] z-10 flex flex-row items-center justify-center gap-6 transition-opacity duration-300"
+        className="absolute bottom-[28px] left-1/2 -translate-x-1/2 p-[14px] z-10 flex flex-row items-center justify-center transition-opacity duration-300"
         style={{ opacity: disabled ? 0 : 1, pointerEvents: disabled ? 'none' : 'auto' }}
       >
-        <CornerBorders className="w-4 h-4" />
-
-        <div className="flex flex-row items-center gap-2 text-black pl-4">
-          <ArrowKeysIcon />
-          <span className="text-xs font-noto-sans tracking-wide opacity-70 whitespace-nowrap">press arrow key</span>
-        </div>
-
-        <div className="flex flex-row items-center gap-3">
+        <div className="flex flex-row items-center gap-3 px-10">
           <button onClick={prev} aria-label="Previous photo">
-            <PiCaretLeftBold size={24} className="text-black hover:text-[#E6B389]" />
+            <PiCaretLeftBold size={24} className="text-black hover:text-gray-400" />
           </button>
           <DialCounter current={currentIndex + 1} total={images.length} />
           <button onClick={next} aria-label="Next photo">
-            <PiCaretRightBold size={24} className="text-black hover:text-[#E6B389]" />
+            <PiCaretRightBold size={24} className="text-black hover:text-gray-400" />
           </button>
-        </div>
-
-        <div className="flex flex-row items-center gap-2 text-black pr-4">
-          <MouseScrollIcon />
-          <span className="text-xs font-noto-sans tracking-wide opacity-70 whitespace-nowrap">mouse scroll</span>
+          <div className="absolute left-0 -translate-x-full flex flex-row items-center gap-2 text-black">
+            <ArrowKeysIcon />
+            <span className="text-xs font-noto-sans tracking-wide whitespace-nowrap">arrow keys</span>
+          </div>
+          <div className="absolute right-0 translate-x-full flex flex-row items-center gap-2 text-black">
+            <MouseScrollIcon />
+            <span className="text-xs font-noto-sans tracking-wide whitespace-nowrap">mouse scroll</span>
+          </div>
         </div>
       </div>
     </div>
