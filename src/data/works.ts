@@ -1,14 +1,15 @@
 
 export interface Work {
   id: string
-  type: string[]
-  site?: string
   title: string
   subtitle?: string
   description?: string
   image: string
   role: string[]
   tech: string[]
+  type: string[]
+  site?: string
+  source?: string
   videos?: string[]
   colors?: any
   colorContext?: string[]
@@ -48,6 +49,7 @@ export const works: Work[] = [
     id: 'copytrading',
     type: ['Web App'],
     site: 'copytradingbotsarescams.netlify.app',
+    source: 'https://github.com/mjv11/copytrading',
     title: 'Copytrading Scams',
     subtitle: 'copytrading bots do not work',
     image: 'copytrading.png',
@@ -77,6 +79,7 @@ export const works: Work[] = [
     id: 'old-portfolio',
     type: ['Website'],
     site: 'https://mjv11.github.io',
+    source: 'https://github.com/mjv11/mjv11.github.io',
     title: 'Portfolio v1',
     subtitle: 'undergrad work',
     description: 'This is my old portfolio site that I built in 2023 in vanilla JS and HTML. It has many of the items I produced as an undergrad.',

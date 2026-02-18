@@ -57,10 +57,8 @@ canvas {
   height: 100%;
 }
 
-/* Custom scrollbar, fade content at top near nav */
+/* Custom scrollbar */
 .scroll-content {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 80px);
-  mask-image: linear-gradient(to bottom, transparent 0, black 80px);
   scrollbar-width: thin;
   scrollbar-color: #E6B389 transparent;
 }

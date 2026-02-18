@@ -4,14 +4,16 @@ import { Tween, Easing } from '@tweenjs/tween.js'
 import { PiCaretRightBold, PiCaretLeftBold } from 'react-icons/pi'
 import { CornerBorders } from '../utils'
 import { createScene, compositeWithLabel, totalDuration, TRANSITION_DURATION } from '../utils/slideTransition'
+import { useColor } from '../contexts/ColorContext'
+import { getAtlasCanvas } from '../utils/mosaicPatterns'
 
 /** Duration (ms) for the "rush to completion" settle when interrupted mid-transition. */
 const SETTLE_MS = 400
 const SCROLL_DEBOUNCE_MS = 300
 
 /** Mouse-tilt effect constants */
-const MAX_TILT_DEG = 15   // maximum rotation in either axis
-const TILT_LERP    = 0.07 // interpolation speed per frame (~60 fps)
+const MAX_TILT_DEG = 5   // maximum rotation in either axis
+const TILT_LERP = 0.035 // interpolation speed per frame (~60 fps)
 
 function loadRawImage(
   url: string,
@@ -37,6 +39,8 @@ interface ImageCarouselProps {
   getLabelForIndex?: (index: number) => { title: string; subtitle?: string } | null
   /** When true, scroll/keyboard switching and navigation UI are disabled. */
   disabled?: boolean
+  /** When true, renders as a field of rotating cubes (about page mode). */
+  isAboutMode?: boolean
 }
 
 interface TransitionState {
@@ -137,10 +141,13 @@ export function ImageCarousel({
   onImageClick,
   getLabelForIndex,
   disabled = false,
+  isAboutMode = false,
 }: ImageCarouselProps) {
+  const { palette } = useColor()
   const containerRef = useRef<HTMLDivElement>(null)
   const clipRef = useRef<HTMLDivElement>(null)
   const tiltWrapRef = useRef<HTMLDivElement>(null)
+  const atlasTexRef = useRef<THREE.Texture | null>(null)
   const tiltTargetRef = useRef({ x: 0, y: 0 })
   const tiltCurrentRef = useRef({ x: 0, y: 0 })
   const tiltRafRef = useRef<number | null>(null)
@@ -342,6 +349,16 @@ export function ImageCarousel({
     const scene = createScene(container)
     sceneRef.current = scene
 
+    const atlasCanvas = getAtlasCanvas()
+    const atlasTex = new THREE.Texture(atlasCanvas)
+    atlasTex.flipY = false
+    atlasTex.generateMipmaps = false
+    atlasTex.minFilter = THREE.LinearFilter
+    atlasTex.magFilter = THREE.LinearFilter
+    atlasTex.needsUpdate = true
+    atlasTexRef.current = atlasTex
+    scene.setPatternAtlas(atlasTex)
+
     const resizeObserver = new ResizeObserver(() => {
       sceneRef.current?.resize()
     })
@@ -378,6 +395,8 @@ export function ImageCarousel({
       }
       transitionIdRef.current += 1
       initLoadIdRef.current += 1
+      atlasTexRef.current?.dispose()
+      atlasTexRef.current = null
       scene.destroy()
       sceneRef.current = null
     }
@@ -415,6 +434,19 @@ export function ImageCarousel({
     runNextTransitionRef.current()
   }, [sectionId])
 
+  // Sync about mode to the scene
+  useEffect(() => {
+    sceneRef.current?.setAboutMode(isAboutMode)
+  }, [isAboutMode])
+
+  // Sync cube colors with palette
+  useEffect(() => {
+    sceneRef.current?.setCubeColors(
+      new THREE.Color(palette.tones[0]),
+      new THREE.Color(palette.tones[2]),
+    )
+  }, [palette])
+
   // Notify parent of index changes
   useEffect(() => {
     onIndexChange?.(currentIndex)
@@ -428,7 +460,7 @@ export function ImageCarousel({
     setCurrentIndex((i) => (images.length ? (i - 1 + images.length) % images.length : 0))
   }, [images.length])
 
-  /** Starts the tilt rAF loop if it isn't already running. */
+  /** Starts the tilt rAF loop — drives scene rotation uniforms (not CSS). */
   const startTiltLoop = useCallback(() => {
     if (tiltRafRef.current !== null) return
     const tick = () => {
@@ -436,11 +468,13 @@ export function ImageCarousel({
       const cur = tiltCurrentRef.current
       cur.x += (target.x - cur.x) * TILT_LERP
       cur.y += (target.y - cur.y) * TILT_LERP
-      const wrap = tiltWrapRef.current
-      if (wrap) {
-        wrap.style.transform =
-          `perspective(900px) rotateX(${cur.x.toFixed(3)}deg) rotateY(${cur.y.toFixed(3)}deg)`
+
+      const scene = sceneRef.current
+      if (scene) {
+        const toRad = Math.PI / 180
+        scene.setMouseRotation(cur.x * toRad, cur.y * toRad)
       }
+
       const settled =
         Math.abs(target.x - cur.x) < 0.005 &&
         Math.abs(target.y - cur.y) < 0.005
@@ -456,9 +490,9 @@ export function ImageCarousel({
   // Mouse-tilt: track global mouse position against the viewport centre
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
-      const nx = (e.clientX / window.innerWidth) * 2 - 1   // −1 … +1
-      const ny = (e.clientY / window.innerHeight) * 2 - 1  // −1 … +1
-      tiltTargetRef.current = { x: -ny * MAX_TILT_DEG, y: nx * MAX_TILT_DEG }
+      const nx = (e.clientX / window.innerWidth) * 2 - 1
+      const ny = (e.clientY / window.innerHeight) * 2 - 1
+      tiltTargetRef.current = { x: ny * MAX_TILT_DEG, y: nx * MAX_TILT_DEG }
       startTiltLoop()
     }
 
@@ -469,7 +503,6 @@ export function ImageCarousel({
         cancelAnimationFrame(tiltRafRef.current)
         tiltRafRef.current = null
       }
-      if (tiltWrapRef.current) tiltWrapRef.current.style.transform = ''
     }
   }, [startTiltLoop])
 
@@ -534,56 +567,46 @@ export function ImageCarousel({
   if (!images.length) return null
 
   return (
-    <div className={`flex items-center justify-center ${className}`}>
-      <div className="flex flex-col items-center gap-3">
-        {/* Tilt wrapper — receives mouse-tracking perspective transform */}
+    <div className={`relative flex items-center justify-center ${className}`}>
+      <div ref={tiltWrapRef}>
         <div
-          ref={tiltWrapRef}
-          style={{ transformStyle: 'preserve-3d', willChange: 'transform' }}
+          ref={clipRef}
+          className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0 cursor-pointer`}
+          onClick={handleCanvasClick}
         >
-          {/* Visible area — clips the oversized canvas */}
           <div
-            ref={clipRef}
-            className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0 cursor-pointer`}
-            onClick={handleCanvasClick}
-          >
-            <div
-              ref={containerRef}
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-              style={{ width: `${canvasScale * 100}%`, height: `${canvasScale * 100}%` }}
-            />
-          </div>
+            ref={containerRef}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            style={{ width: `${canvasScale * 100}%`, height: `${canvasScale * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Navigation hints + page counter — overlaid at the bottom */}
+      <div
+        className="absolute bottom-[28px] left-1/2 -translate-x-1/2 p-[14px] z-10 flex flex-row items-center justify-center gap-6 transition-opacity duration-300"
+        style={{ opacity: disabled ? 0 : 1, pointerEvents: disabled ? 'none' : 'auto' }}
+      >
+        <CornerBorders className="w-4 h-4" />
+
+        <div className="flex flex-row items-center gap-2 text-black pl-4">
+          <ArrowKeysIcon />
+          <span className="text-xs font-noto-sans tracking-wide opacity-70 whitespace-nowrap">press arrow key</span>
         </div>
 
-        {/* Navigation hints + page counter */}
-        <div
-          className="relative flex flex-row items-center justify-center gap-6 p-[14px] transition-opacity duration-300"
-          style={{ opacity: disabled ? 0 : 1, pointerEvents: disabled ? 'none' : 'auto' }}
-        >
-          <CornerBorders className="w-4 h-4" />
+        <div className="flex flex-row items-center gap-3">
+          <button onClick={prev} aria-label="Previous photo">
+            <PiCaretLeftBold size={24} className="text-black hover:text-[#E6B389]" />
+          </button>
+          <DialCounter current={currentIndex + 1} total={images.length} />
+          <button onClick={next} aria-label="Next photo">
+            <PiCaretRightBold size={24} className="text-black hover:text-[#E6B389]" />
+          </button>
+        </div>
 
-          {/* Arrow keys hint */}
-          <div className="flex flex-row items-center gap-2 text-black pl-4">
-            <ArrowKeysIcon />
-            <span className="text-xs font-noto-sans tracking-wide opacity-70">press arrow key</span>
-          </div>
-
-          {/* Prev / counter / next */}
-          <div className="flex flex-row items-center gap-3">
-            <button onClick={prev} aria-label="Previous photo">
-              <PiCaretLeftBold size={24} className="text-black hover:text-[#E6B389]" />
-            </button>
-            <DialCounter current={currentIndex + 1} total={images.length} />
-            <button onClick={next} aria-label="Next photo">
-              <PiCaretRightBold size={24} className="text-black hover:text-[#E6B389]" />
-            </button>
-          </div>
-
-          {/* Mouse scroll hint */}
-          <div className="flex flex-row items-center gap-2 text-black pr-4">
-            <MouseScrollIcon />
-            <span className="text-xs font-noto-sans tracking-wide opacity-70">mouse scroll</span>
-          </div>
+        <div className="flex flex-row items-center gap-2 text-black pr-4">
+          <MouseScrollIcon />
+          <span className="text-xs font-noto-sans tracking-wide opacity-70 whitespace-nowrap">mouse scroll</span>
         </div>
       </div>
     </div>

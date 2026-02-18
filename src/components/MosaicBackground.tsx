@@ -1,80 +1,127 @@
 import { useEffect, useRef } from 'react'
-import * as THREE from 'three'
-import { useColor } from '../contexts/ColorContext'
+import { useColor, type ColorPalette } from '../contexts/ColorContext'
+import { drawPatternColored, PATTERN_COUNT, mulberry32 } from '../utils/mosaicPatterns'
 
-/* ─── Configuration ─────────────────────────────────────────────── */
+const CELL_SIZE = 64
+const SEED = 42
+const COLOR_LERP_RATE = 0.04
 
-const CELL_SIZE       = 64    // visual size of one grid cell (px)
-const OVERFLOW        = 1.1   // mosaic extends slightly past viewport edges
-const SEED            = 42    // deterministic randomness
-const COLOR_LERP_RATE = 0.04  // per-frame lerp factor (0→1); lower = slower crossfade
-
-/* ─── Seeded PRNG (Mulberry32) ──────────────────────────────────── */
-
-function mulberry32(seed: number) {
-  return () => {
-    seed |= 0
-    seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
+interface CellInfo {
+  patternIndex: number
+  bgTone: number
+  fgTone: number
 }
 
-/* ─── Mosaic geometry builder ───────────────────────────────────── */
+interface MosaicState {
+  canvas: HTMLCanvasElement
+  ctx: CanvasRenderingContext2D
+  grid: CellInfo[]
+  cols: number
+  rows: number
+  colors: Float32Array
+  targets: Float32Array
+  animId: number
+  cancelled: boolean
+  dpr: number
+}
 
-function buildMosaic(cols: number, rows: number) {
+function hexToRgb01(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16)
+  return [(n >> 16 & 0xff) / 255, (n >> 8 & 0xff) / 255, (n & 0xff) / 255]
+}
+
+function buildGrid(state: MosaicState, container: HTMLElement, palette: ColorPalette) {
+  const w = container.clientWidth
+  const h = container.clientHeight
+  state.dpr = Math.min(window.devicePixelRatio, 2)
+  state.canvas.width = Math.ceil(w * state.dpr)
+  state.canvas.height = Math.ceil(h * state.dpr)
+
+  state.cols = Math.ceil(w / CELL_SIZE) + 1
+  state.rows = Math.ceil(h / CELL_SIZE) + 1
+  const cellCount = state.cols * state.rows
+
   const rand = mulberry32(SEED)
-  const verts: number[] = []
-  const toneIdx: number[] = []
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x0 = c,     y0 = r
-      const x1 = c + 1, y1 = r + 1
-      const mx = c + 0.5, my = r + 0.5
-
-      const roll = rand()
-
-      if (roll < 0.28) {
-        /* ── Type C: X-split → 4 triangles ── */
-        verts.push(x0,y0,0, x1,y0,0, mx,my,0)
-        toneIdx.push(Math.floor(rand() * 4))
-
-        verts.push(x1,y0,0, x1,y1,0, mx,my,0)
-        toneIdx.push(Math.floor(rand() * 4))
-
-        verts.push(x1,y1,0, x0,y1,0, mx,my,0)
-        toneIdx.push(Math.floor(rand() * 4))
-
-        verts.push(x0,y1,0, x0,y0,0, mx,my,0)
-        toneIdx.push(Math.floor(rand() * 4))
-      } else if (roll < 0.64) {
-        /* ── Type A: diagonal TL → BR ── */
-        verts.push(x0,y0,0, x1,y0,0, x1,y1,0)
-        toneIdx.push(Math.floor(rand() * 4))
-
-        verts.push(x0,y0,0, x1,y1,0, x0,y1,0)
-        toneIdx.push(Math.floor(rand() * 4))
-      } else {
-        /* ── Type B: diagonal TR → BL ── */
-        verts.push(x0,y0,0, x1,y0,0, x0,y1,0)
-        toneIdx.push(Math.floor(rand() * 4))
-
-        verts.push(x1,y0,0, x1,y1,0, x0,y1,0)
-        toneIdx.push(Math.floor(rand() * 4))
-      }
-    }
+  state.grid = []
+  for (let i = 0; i < cellCount; i++) {
+    const bgTone = Math.floor(rand() * 4)
+    let fgTone = Math.floor(rand() * 4)
+    if (fgTone === bgTone) fgTone = (fgTone + 1) % 4
+    state.grid.push({
+      patternIndex: Math.floor(rand() * PATTERN_COUNT),
+      bgTone,
+      fgTone,
+    })
   }
 
-  return { positions: new Float32Array(verts), toneIndices: toneIdx }
+  state.colors = new Float32Array(cellCount * 6)
+  state.targets = new Float32Array(cellCount * 6)
+
+  const tones = palette.tones.map(hexToRgb01)
+  for (let i = 0; i < cellCount; i++) {
+    const bg = tones[state.grid[i].bgTone]
+    const fg = tones[state.grid[i].fgTone]
+    const base = i * 6
+    state.colors[base] = bg[0]; state.colors[base + 1] = bg[1]; state.colors[base + 2] = bg[2]
+    state.colors[base + 3] = fg[0]; state.colors[base + 4] = fg[1]; state.colors[base + 5] = fg[2]
+  }
+  state.targets.set(state.colors)
+
+  drawMosaic(state)
 }
 
-/* ─── Component ─────────────────────────────────────────────────── */
+function drawMosaic(state: MosaicState) {
+  const { ctx, grid, cols, colors, dpr } = state
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+  const lw = Math.max(1, CELL_SIZE * 0.025)
+  for (let i = 0; i < grid.length; i++) {
+    const c = i % cols
+    const r = Math.floor(i / cols)
+    const base = i * 6
+    const bgStr = `rgb(${(colors[base] * 255) | 0},${(colors[base + 1] * 255) | 0},${(colors[base + 2] * 255) | 0})`
+    const fgStr = `rgb(${(colors[base + 3] * 255) | 0},${(colors[base + 4] * 255) | 0},${(colors[base + 5] * 255) | 0})`
+    drawPatternColored(ctx, grid[i].patternIndex, c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, bgStr, fgStr, lw)
+  }
+}
+
+function updateTargets(state: MosaicState, palette: ColorPalette) {
+  const tones = palette.tones.map(hexToRgb01)
+  for (let i = 0; i < state.grid.length; i++) {
+    const bg = tones[state.grid[i].bgTone]
+    const fg = tones[state.grid[i].fgTone]
+    const base = i * 6
+    state.targets[base] = bg[0]; state.targets[base + 1] = bg[1]; state.targets[base + 2] = bg[2]
+    state.targets[base + 3] = fg[0]; state.targets[base + 4] = fg[1]; state.targets[base + 5] = fg[2]
+  }
+}
+
+function startTransition(state: MosaicState) {
+  cancelAnimationFrame(state.animId)
+  const animate = () => {
+    if (state.cancelled) return
+    let maxDelta = 0
+    for (let i = 0; i < state.colors.length; i++) {
+      const d = state.targets[i] - state.colors[i]
+      state.colors[i] += d * COLOR_LERP_RATE
+      const abs = d < 0 ? -d : d
+      if (abs > maxDelta) maxDelta = abs
+    }
+    drawMosaic(state)
+    if (maxDelta < 0.001) {
+      state.colors.set(state.targets)
+      drawMosaic(state)
+      return
+    }
+    state.animId = requestAnimationFrame(animate)
+  }
+  state.animId = requestAnimationFrame(animate)
+}
 
 export const MosaicBackground = () => {
   const containerRef = useRef<HTMLDivElement>(null)
   const { palette } = useColor()
+  const stateRef = useRef<MosaicState | null>(null)
   const paletteRef = useRef(palette)
   paletteRef.current = palette
 
@@ -82,151 +129,47 @@ export const MosaicBackground = () => {
     const container = containerRef.current
     if (!container) return
 
-    let cancelled = false
-    let animId = 0
+    const canvas = document.createElement('canvas')
+    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%'
+    container.appendChild(canvas)
+    const ctx = canvas.getContext('2d')!
 
-    const w = container.clientWidth
-    const h = container.clientHeight
-
-    /* ── Grid (oversized so parallax never reveals edges) ── */
-    const cols = Math.ceil((w * OVERFLOW) / CELL_SIZE) + 4
-    const rows = Math.ceil((h * OVERFLOW) / CELL_SIZE) + 4
-    const { positions, toneIndices } = buildMosaic(cols, rows)
-
-    /* ── Dual vertex-color buffers (current + target for crossfade) ── */
-    const totalFloats = toneIndices.length * 9 // 3 verts × rgb per tri
-    const colorArr   = new Float32Array(totalFloats)
-    const targetArr  = new Float32Array(totalFloats)
-    let isTransitioning = false
-
-    const writePalette = (dest: Float32Array, tones: THREE.Color[]) => {
-      for (let i = 0; i < toneIndices.length; i++) {
-        const t = tones[toneIndices[i]]
-        const base = i * 9
-        for (let v = 0; v < 3; v++) {
-          dest[base + v * 3]     = t.r
-          dest[base + v * 3 + 1] = t.g
-          dest[base + v * 3 + 2] = t.b
-        }
-      }
+    const state: MosaicState = {
+      canvas,
+      ctx,
+      grid: [],
+      cols: 0,
+      rows: 0,
+      colors: new Float32Array(0),
+      targets: new Float32Array(0),
+      animId: 0,
+      cancelled: false,
+      dpr: 1,
     }
+    stateRef.current = state
 
-    // Initialise both buffers to the starting palette
-    const initTones = paletteRef.current.tones.map(hex => new THREE.Color(hex))
-    writePalette(colorArr, initTones)
-    writePalette(targetArr, initTones)
+    buildGrid(state, container, paletteRef.current)
 
-    /* ── Geometry ── */
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    const colorAttr = new THREE.BufferAttribute(colorArr, 3)
-    geo.setAttribute('color', colorAttr)
-
-    /* ── Material & Mesh ── */
-    const mat = new THREE.MeshBasicMaterial({ vertexColors: true })
-    const mesh = new THREE.Mesh(geo, mat)
-    mesh.position.set(-cols / 2, -rows / 2, 0)
-
-    /* ── Scene ── */
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color(paletteRef.current.tones[0])
-    scene.add(mesh)
-
-    /* ── Orthographic camera (1 unit = 1 cell) ── */
-    const cellsW = w / CELL_SIZE
-    const cellsH = h / CELL_SIZE
-    const camera = new THREE.OrthographicCamera(
-      -cellsW / 2,  cellsW / 2,
-       cellsH / 2, -cellsH / 2,
-      0.1, 10,
-    )
-    camera.position.z = 5
-
-    /* ── Renderer ── */
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setSize(w, h)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    container.appendChild(renderer.domElement)
-
-    /* ── Resize ── */
     const onResize = () => {
-      if (cancelled) return
-      const nw = container.clientWidth
-      const nh = container.clientHeight
-      const ncw = nw / CELL_SIZE
-      const nch = nh / CELL_SIZE
-      camera.left   = -ncw / 2
-      camera.right  =  ncw / 2
-      camera.top    =  nch / 2
-      camera.bottom = -nch / 2
-      camera.updateProjectionMatrix()
-      renderer.setSize(nw, nh)
+      if (!state.cancelled) buildGrid(state, container, paletteRef.current)
     }
     window.addEventListener('resize', onResize)
 
-    /* ── Palette-change tracking ── */
-    let lastPalette = paletteRef.current
-    const bgTarget = new THREE.Color(paletteRef.current.tones[0])
-    const bgCurrent = bgTarget.clone()
-
-    /* ── Render loop ── */
-    const animate = () => {
-      if (cancelled) return
-      animId = requestAnimationFrame(animate)
-
-      // Detect palette change → update targets
-      if (paletteRef.current !== lastPalette) {
-        lastPalette = paletteRef.current
-        const newTones = paletteRef.current.tones.map(hex => new THREE.Color(hex))
-        writePalette(targetArr, newTones)
-        bgTarget.set(paletteRef.current.tones[0])
-        isTransitioning = true
-      }
-
-      // Lerp vertex colors toward target each frame
-      if (isTransitioning) {
-        let maxDelta = 0
-        for (let i = 0; i < totalFloats; i++) {
-          const diff = targetArr[i] - colorArr[i]
-          colorArr[i] += diff * COLOR_LERP_RATE
-          const absDiff = diff < 0 ? -diff : diff
-          if (absDiff > maxDelta) maxDelta = absDiff
-        }
-        colorAttr.needsUpdate = true
-
-        // Lerp scene background
-        bgCurrent.r += (bgTarget.r - bgCurrent.r) * COLOR_LERP_RATE
-        bgCurrent.g += (bgTarget.g - bgCurrent.g) * COLOR_LERP_RATE
-        bgCurrent.b += (bgTarget.b - bgCurrent.b) * COLOR_LERP_RATE
-        ;(scene.background as THREE.Color).copy(bgCurrent)
-
-        // Snap to target once close enough to avoid infinite micro-updates
-        if (maxDelta < 0.001) {
-          colorArr.set(targetArr)
-          colorAttr.needsUpdate = true
-          bgCurrent.copy(bgTarget)
-          ;(scene.background as THREE.Color).copy(bgTarget)
-          isTransitioning = false
-        }
-      }
-
-      renderer.render(scene, camera)
-    }
-    animate()
-
-    /* ── Cleanup ── */
     return () => {
-      cancelled = true
-      cancelAnimationFrame(animId)
+      state.cancelled = true
+      cancelAnimationFrame(state.animId)
       window.removeEventListener('resize', onResize)
-      geo.dispose()
-      mat.dispose()
-      renderer.dispose()
-      if (renderer.domElement.parentNode) {
-        renderer.domElement.parentNode.removeChild(renderer.domElement)
-      }
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas)
+      stateRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state || state.grid.length === 0) return
+    updateTargets(state, palette)
+    startTransition(state)
+  }, [palette])
 
   return (
     <div

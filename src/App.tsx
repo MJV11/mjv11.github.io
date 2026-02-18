@@ -8,6 +8,8 @@ function App() {
   const { currentPage } = useNav()
   const { imagesBySection, isReady } = usePortfolioImagesContext()
   const hasCarouselSection = (SECTIONS_WITH_IMAGES as readonly string[]).includes(currentPage)
+  const isAboutPage = currentPage === 'about'
+  const showCarousel = hasCarouselSection || isAboutPage
   const isWorksPage = currentPage === 'works'
 
   const carouselImages =
@@ -26,17 +28,19 @@ function App() {
     <div className='fixed inset-0 flex flex-col overflow-hidden'>
       <LoadingScreen isVisible={!isReady} />
       <MosaicBackground />
-      <div className='shrink-0 p-[14px] z-10 flex justify-center'>
-        <Nav />
+      <div className='absolute top-0 left-0 right-0 p-[14px] z-20 flex justify-center pointer-events-none'>
+        <div className='pointer-events-auto'>
+          <Nav />
+        </div>
       </div>
       <main className='scroll-content flex-1 min-h-0 overflow-y-auto z-10'>
         {isReady && carouselImages.length > 0 && (
           <div
             className='relative w-full shrink-0 overflow-hidden'
             style={{
-              height: hasCarouselSection ? '90vh' : 0,
-              visibility: hasCarouselSection ? 'visible' : 'hidden',
-              pointerEvents: hasCarouselSection ? 'auto' : 'none',
+              height: showCarousel ? '100vh' : 0,
+              visibility: showCarousel ? 'visible' : 'hidden',
+              pointerEvents: showCarousel ? 'auto' : 'none',
             }}
           >
             <div className="absolute inset-0 flex flex-col md:flex-row transition-all duration-500 ease-in-out">
@@ -59,13 +63,14 @@ function App() {
               >
                 <ImageCarousel
                   images={carouselImages}
-                  sizeClassName="w-[100vw] h-[80vh]"
+                  sizeClassName='w-screen h-screen'
                   canvasScale={1.8}
                   sectionId={hasCarouselSection ? currentPage : undefined}
                   onIndexChange={handleIndexChange}
                   onImageClick={handleImageClick}
                   getLabelForIndex={getLabelForIndex}
-                  disabled={isExpanded}
+                  disabled={isExpanded || isAboutPage}
+                  isAboutMode={isAboutPage}
                 />
               </div>
             </div>

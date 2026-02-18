@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import * as TWEEN from '@tweenjs/tween.js'
+import { PATTERN_COUNT, ATLAS_COLS, ATLAS_ROWS } from './mosaicPatterns'
 
 // Base plane size in world units before viewport scaling.
 const width = 100
@@ -29,27 +30,26 @@ function randFloatSpread(range: number) {
   return (Math.random() - 0.5) * 2 * range
 }
 
-function computeCentroid(
-  pos: Float32Array,
-  i0: number,
-  i1: number,
-  i2: number
-): THREE.Vector3 {
-  const c = new THREE.Vector3()
-  c.x = (pos[i0 * 3] + pos[i1 * 3] + pos[i2 * 3]) / 3
-  c.y = (pos[i0 * 3 + 1] + pos[i1 * 3 + 1] + pos[i2 * 3 + 1]) / 3
-  c.z = (pos[i0 * 3 + 2] + pos[i1 * 3 + 2] + pos[i2 * 3 + 2]) / 3
-  return c
-}
+const cellW = width / segX
+const cellH = height / segY
 
-function createSlideGeometry(phase: 'in' | 'out'): THREE.BufferGeometry {
-  // `segX`/`segY` determine how many triangles exist.
-  // More segments => denser "ribbon/shard" field.
-  const plane = new THREE.PlaneGeometry(width, height, segX, segY)
-  const pos = plane.getAttribute('position')!.array as Float32Array
-  const uv = plane.getAttribute('uv')!.array as Float32Array
-  const index = plane.index?.array
-  if (!index) throw new Error('expected indexed geometry')
+function createSlideGeometry(phase: 'in' | 'out'): THREE.InstancedBufferGeometry {
+  // Base quad: unit square [-0.5, 0.5]. Cloth path scales to cell dims; cube path uses it directly.
+  const basePositions = new Float32Array([
+    -0.5, -0.5, 0,
+     0.5, -0.5, 0,
+     0.5,  0.5, 0,
+    -0.5,  0.5, 0,
+  ])
+  const baseUvs = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1])
+  const baseCorner = new Float32Array([0, 1, 2, 3]) // which quad vertex (for jitter lookup)
+  const baseIndex = new Uint16Array([0, 1, 2, 0, 2, 3])
+
+  const geo = new THREE.InstancedBufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(basePositions, 3))
+  geo.setAttribute('uv', new THREE.BufferAttribute(baseUvs, 2))
+  geo.setAttribute('aVertexCorner', new THREE.BufferAttribute(baseCorner, 1))
+  geo.setIndex(new THREE.BufferAttribute(baseIndex, 1))
 
   const tempPoint = new THREE.Vector3()
   function getControlPoint0(centroid: THREE.Vector3) {
@@ -67,123 +67,203 @@ function createSlideGeometry(phase: 'in' | 'out'): THREE.BufferGeometry {
     return tempPoint
   }
 
-  const faceCount = index.length / 3
-  const positions: number[] = []
-  const uvs: number[] = []
-  const aAnimation: number[] = []
-  const aStartPosition: number[] = []
-  const aControl0: number[] = []
-  const aControl1: number[] = []
-  const aEndPosition: number[] = []
+  const instanceCount = segX * segY
+  const aAnimation = new Float32Array(instanceCount * 2)
+  const aStartPosition = new Float32Array(instanceCount * 3)
+  const aControl0 = new Float32Array(instanceCount * 3)
+  const aControl1 = new Float32Array(instanceCount * 3)
+  const aEndPosition = new Float32Array(instanceCount * 3)
+  const aInstanceCell = new Float32Array(instanceCount * 2)
+  const aDelayJitter = new Float32Array(instanceCount * 4)
+  const aCubeIndex = new Float32Array(instanceCount)
+  const aCubeFace = new Float32Array(instanceCount)
+  const aCubeRandoms = new Float32Array(instanceCount * 3)
+  const aPatternTile = new Float32Array(instanceCount)
 
-  // Reused vectors to avoid allocations while iterating faces.
+  // Pre-compute one random vec3 per cube (shared by all 6 faces)
+  const numCubes = Math.ceil(instanceCount / 6)
+  const cubeRandomsLookup = new Float32Array(numCubes * 3)
+  for (let c = 0; c < numCubes; c++) {
+    cubeRandomsLookup[c * 3] = Math.random() * 2 - 1
+    cubeRandomsLookup[c * 3 + 1] = Math.random() * 2 - 1
+    cubeRandomsLookup[c * 3 + 2] = Math.random() * 2 - 1
+  }
+
   const centroid = new THREE.Vector3()
   const startPosition = new THREE.Vector3()
   const control0 = new THREE.Vector3()
   const control1 = new THREE.Vector3()
   const endPosition = new THREE.Vector3()
 
-  for (let i = 0; i < faceCount; i++) {
-    // Face indices (triangle).
-    const i0 = index[i * 3]
-    const i1 = index[i * 3 + 1]
-    const i2 = index[i * 3 + 2]
-    centroid.copy(computeCentroid(pos, i0, i1, i2))
+  let idx = 0
+  for (let iy = 0; iy < segY; iy++) {
+    for (let ix = 0; ix < segX; ix++) {
+      centroid.x = -width * 0.5 + (ix + 0.5) * cellW
+      centroid.y = -height * 0.5 + (iy + 0.5) * cellH
+      centroid.z = 0
 
-    // Each triangle has its own duration + delay envelope.
-    const duration = randFloat(minDuration, maxDuration)
-    const delayX = THREE.MathUtils.mapLinear(centroid.x, -width * 0.5, width * 0.5, 0, maxDelayX)
-    const delayY =
-      phase === 'in'
-        ? THREE.MathUtils.mapLinear(Math.abs(centroid.y), 0, height * 0.5, 0, maxDelayY)
-        : THREE.MathUtils.mapLinear(Math.abs(centroid.y), 0, height * 0.5, maxDelayY, 0)
-    const baseDelay = delayX + delayY
+      const duration = randFloat(minDuration, maxDuration)
+      const delayX = THREE.MathUtils.mapLinear(centroid.x, -width * 0.5, width * 0.5, 0, maxDelayX)
+      const delayY =
+        phase === 'in'
+          ? THREE.MathUtils.mapLinear(Math.abs(centroid.y), 0, height * 0.5, 0, maxDelayY)
+          : THREE.MathUtils.mapLinear(Math.abs(centroid.y), 0, height * 0.5, maxDelayY, 0)
+      const baseDelay = delayX + delayY
 
-    startPosition.copy(centroid)
-    endPosition.copy(centroid)
-    if (phase === 'in') {
-      control0.copy(centroid).sub(getControlPoint0(centroid))
-      control1.copy(centroid).sub(getControlPoint1(centroid))
-    } else {
-      control0.copy(centroid).add(getControlPoint0(centroid))
-      control1.copy(centroid).add(getControlPoint1(centroid))
-    }
+      startPosition.copy(centroid)
+      endPosition.copy(centroid)
+      if (phase === 'in') {
+        control0.copy(centroid).sub(getControlPoint0(centroid))
+        control1.copy(centroid).sub(getControlPoint1(centroid))
+      } else {
+        control0.copy(centroid).add(getControlPoint0(centroid))
+        control1.copy(centroid).add(getControlPoint1(centroid))
+      }
 
-    // Per-vertex delay jitter is what creates stretched/shredded ribbons
-    // instead of rigid triangles moving in lockstep.
-    for (let v = 0; v < 3; v++) {
-      aAnimation.push(baseDelay + Math.random() * stretch * duration, duration)
-      aStartPosition.push(startPosition.x, startPosition.y, startPosition.z)
-      aControl0.push(control0.x, control0.y, control0.z)
-      aControl1.push(control1.x, control1.y, control1.z)
-      aEndPosition.push(endPosition.x, endPosition.y, endPosition.z)
-    }
-
-    // Positions are stored relative to face centroid so each triangle can
-    // be transformed independently in the shader.
-    for (const idx of [i0, i1, i2]) {
-      positions.push(
-        pos[idx * 3] - centroid.x,
-        pos[idx * 3 + 1] - centroid.y,
-        pos[idx * 3 + 2] - centroid.z
-      )
-      uvs.push(uv[idx * 2], uv[idx * 2 + 1])
+      aAnimation[idx * 2] = baseDelay
+      aAnimation[idx * 2 + 1] = duration
+      aStartPosition[idx * 3] = startPosition.x
+      aStartPosition[idx * 3 + 1] = startPosition.y
+      aStartPosition[idx * 3 + 2] = startPosition.z
+      aControl0[idx * 3] = control0.x
+      aControl0[idx * 3 + 1] = control0.y
+      aControl0[idx * 3 + 2] = control0.z
+      aControl1[idx * 3] = control1.x
+      aControl1[idx * 3 + 1] = control1.y
+      aControl1[idx * 3 + 2] = control1.z
+      aEndPosition[idx * 3] = endPosition.x
+      aEndPosition[idx * 3 + 1] = endPosition.y
+      aEndPosition[idx * 3 + 2] = endPosition.z
+      aInstanceCell[idx * 2] = ix
+      aInstanceCell[idx * 2 + 1] = iy
+      // Per-vertex delay jitter (one per quad corner) for ribbon/stretch effect
+      const jitterScale = stretch * duration
+      aDelayJitter[idx * 4] = Math.random() * jitterScale
+      aDelayJitter[idx * 4 + 1] = Math.random() * jitterScale
+      aDelayJitter[idx * 4 + 2] = Math.random() * jitterScale
+      aDelayJitter[idx * 4 + 3] = Math.random() * jitterScale
+      const ci = Math.floor(idx / 6)
+      aCubeIndex[idx] = ci
+      aCubeFace[idx] = idx % 6
+      aCubeRandoms[idx * 3] = cubeRandomsLookup[ci * 3]
+      aCubeRandoms[idx * 3 + 1] = cubeRandomsLookup[ci * 3 + 1]
+      aCubeRandoms[idx * 3 + 2] = cubeRandomsLookup[ci * 3 + 2]
+      aPatternTile[idx] = Math.floor(Math.random() * PATTERN_COUNT)
+      idx++
     }
   }
 
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
-  geo.setAttribute(
-    'aAnimation',
-    new THREE.Float32BufferAttribute(aAnimation, 2)
-  )
-  geo.setAttribute(
-    'aStartPosition',
-    new THREE.Float32BufferAttribute(aStartPosition, 3)
-  )
-  geo.setAttribute(
-    'aControl0',
-    new THREE.Float32BufferAttribute(aControl0, 3)
-  )
-  geo.setAttribute(
-    'aControl1',
-    new THREE.Float32BufferAttribute(aControl1, 3)
-  )
-  geo.setAttribute(
-    'aEndPosition',
-    new THREE.Float32BufferAttribute(aEndPosition, 3)
-  )
+  geo.setAttribute('aAnimation', new THREE.InstancedBufferAttribute(aAnimation, 2))
+  geo.setAttribute('aStartPosition', new THREE.InstancedBufferAttribute(aStartPosition, 3))
+  geo.setAttribute('aControl0', new THREE.InstancedBufferAttribute(aControl0, 3))
+  geo.setAttribute('aControl1', new THREE.InstancedBufferAttribute(aControl1, 3))
+  geo.setAttribute('aEndPosition', new THREE.InstancedBufferAttribute(aEndPosition, 3))
+  geo.setAttribute('aInstanceCell', new THREE.InstancedBufferAttribute(aInstanceCell, 2))
+  geo.setAttribute('aDelayJitter', new THREE.InstancedBufferAttribute(aDelayJitter, 4))
+  geo.setAttribute('aCubeIndex', new THREE.InstancedBufferAttribute(aCubeIndex, 1))
+  geo.setAttribute('aCubeFace', new THREE.InstancedBufferAttribute(aCubeFace, 1))
+  geo.setAttribute('aCubeRandoms', new THREE.InstancedBufferAttribute(aCubeRandoms, 3))
+  geo.setAttribute('aPatternTile', new THREE.InstancedBufferAttribute(aPatternTile, 1))
+  geo.instanceCount = instanceCount
 
-  plane.dispose()
   return geo
 }
 
 const vertexShader = `
 uniform float uTime;
 uniform float uClothTime;
+uniform float uCubeTime;
+uniform float uSegX;
+uniform float uSegY;
+uniform float uAboutMode;
+uniform float uMouseRotX;
+uniform float uMouseRotY;
+uniform vec2 uPatternGridSize;
 
 attribute vec2 aAnimation;
 attribute vec3 aStartPosition;
 attribute vec3 aControl0;
 attribute vec3 aControl1;
 attribute vec3 aEndPosition;
+attribute vec2 aInstanceCell;
+attribute vec4 aDelayJitter;
+attribute float aVertexCorner;
+attribute float aCubeIndex;
+attribute float aCubeFace;
+attribute vec3 aCubeRandoms;
+attribute float aPatternTile;
 
 varying vec2 vUv;
 varying vec3 vClothNormal;
 varying float vClothFade;
+varying float vAboutMode;
+varying float vCubeFace;
+varying vec2 vPatternUv;
 
-// cubic bezier
+const float PI = 3.14159265359;
+
+mat3 rotY(float a) {
+  float c = cos(a); float s = sin(a);
+  return mat3(c,0.0,-s, 0.0,1.0,0.0, s,0.0,c);
+}
+mat3 rotX(float a) {
+  float c = cos(a); float s = sin(a);
+  return mat3(1.0,0.0,0.0, 0.0,c,s, 0.0,-s,c);
+}
+
+vec3 rotateVec3(vec3 v, float angle, vec3 axis) {
+  vec3 a = normalize(axis);
+  float s = sin(angle);
+  float c = cos(angle);
+  float oc = 1.0 - c;
+  mat3 m = mat3(
+    a.x*a.x*oc + c,      a.y*a.x*oc + a.z*s,  a.z*a.x*oc - a.y*s,
+    a.x*a.y*oc - a.z*s,  a.y*a.y*oc + c,       a.z*a.y*oc + a.x*s,
+    a.x*a.z*oc + a.y*s,  a.y*a.z*oc - a.x*s,   a.z*a.z*oc + c
+  );
+  return m * v;
+}
+
+mat3 cubeFaceRot(float face) {
+  if (face < 0.5) return mat3(1.0);
+  if (face < 1.5) return mat3(-1,0,0, 0,1,0, 0,0,-1);
+  if (face < 2.5) return mat3(0,0,-1, 0,1,0, 1,0,0);
+  if (face < 3.5) return mat3(0,0,1, 0,1,0, -1,0,0);
+  if (face < 4.5) return mat3(1,0,0, 0,0,-1, 0,1,0);
+  return mat3(1,0,0, 0,0,1, 0,-1,0);
+}
+vec3 cubeFaceOff(float face, float h) {
+  if (face < 0.5) return vec3(0,0,h);
+  if (face < 1.5) return vec3(0,0,-h);
+  if (face < 2.5) return vec3(h,0,0);
+  if (face < 3.5) return vec3(-h,0,0);
+  if (face < 4.5) return vec3(0,h,0);
+  return vec3(0,-h,0);
+}
+
+float mapf(float value, float inMin, float inMax, float outMin, float outMax) {
+  return clamp(((value - inMin) / (inMax - inMin)) * (outMax - outMin) + outMin, outMin, outMax);
+}
+
+float exponentialInOut(float t) {
+  if (t <= 0.0) return 0.0;
+  if (t >= 1.0) return 1.0;
+  return t < 0.5
+    ? 0.5 * pow(2.0, 20.0 * t - 10.0)
+    : 1.0 - 0.5 * pow(2.0, 10.0 - 20.0 * t);
+}
+
+float getAnimationValue(float animVal, float randomVal) {
+  float p = clamp(-mapf(randomVal, -1.0, 1.0, 0.0, 0.6) + animVal * 1.5, 0.0, 1.0);
+  return exponentialInOut(p);
+}
+
 vec3 cubicBezier(vec3 a, vec3 b, vec3 c, vec3 d, float t) {
-  float t2 = t * t;
-  float t3 = t2 * t;
-  float mt = 1.0 - t;
-  float mt2 = mt * mt;
-  float mt3 = mt2 * mt;
+  float t2 = t * t; float t3 = t2 * t;
+  float mt = 1.0 - t; float mt2 = mt * mt; float mt3 = mt2 * mt;
   return mt3 * a + 3.0 * mt2 * t * b + 3.0 * mt * t2 * c + t3 * d;
 }
 
-// ease in out cubic (Penner)
 float ease(float t, float b, float c, float d) {
   t = t / (d * 0.5);
   if (t < 1.0) return b + c * 0.5 * t * t * t;
@@ -192,44 +272,140 @@ float ease(float t, float b, float c, float d) {
 }
 
 void main() {
-  vUv = uv;
+  vCubeFace = aCubeFace;
+  mat3 mouseRot = rotY(uMouseRotY) * rotX(uMouseRotX);
 
-  float tDelay = aAnimation.x;
-  float tDuration = aAnimation.y;
-  float tTime = clamp(uTime - tDelay, 0.0, tDuration);
-  float tProgress = ease(tTime, 0.0, 1.0, tDuration);
+  vec3 pos = vec3(0.0);
+  vec3 normal = vec3(0.0, 0.0, 1.0);
+  vec2 texUv = vec2(0.0);
+  float fade = 0.0;
+  float blend = 0.0;
 
-  vec3 posOffset = cubicBezier(aStartPosition, aControl0, aControl1, aEndPosition, tProgress);
+  float pCols = uPatternGridSize.x;
+  float pRows = uPatternGridSize.y;
+  float pCol = mod(aPatternTile, pCols);
+  float pRow = floor(aPatternTile / pCols);
+  vPatternUv = vec2(pCol / pCols, pRow / pRows) + uv / vec2(pCols, pRows);
 
-  vec3 pos = position;
-  float scale = 1.0 - tProgress; // SCALE_LINE
-  pos *= scale;
-  pos += posOffset;
+  // ────────────────────────────────────────────
+  // CLOTH MODE
+  // ────────────────────────────────────────────
+  vec3 clothPos = vec3(0.0);
+  vec3 clothNormal = vec3(0.0, 0.0, 1.0);
+  vec2 clothUv = vec2(0.0);
+  float clothScale = 0.0;
 
-  // ── Cloth ripple ──────────────────────────────────────────
-  // Diagonal phase (equal x and y): wave propagates top-right → bottom-left
-  vec3 planePos = position + aStartPosition;
-  float phase = planePos.x + planePos.y;
-  float k = 0.1;
-  float speed = 3.0;
-  // Wave strength increases right (x>0) to left (x<0); plane half-width 50
-  float ampScale = 1.0 - 0.5 * (planePos.x / 50.0);
-  ampScale = max(ampScale, 0.35);
-  float amp = 2.0 * ampScale;
+  if (uAboutMode < 1.0) {
+    vec3 cellPos = vec3(position.x * ${cellW.toFixed(4)}, position.y * ${cellH.toFixed(4)}, position.z);
+    clothUv = (aInstanceCell + uv) / vec2(uSegX, uSegY);
 
-  float waveArg = phase * k + uClothTime * speed;
-  float clothZ = sin(waveArg) * amp;
+    float baseDelay = aAnimation.x;
+    float tDuration = aAnimation.y;
+    float jitter = (1.0 - step(0.5, aVertexCorner)) * aDelayJitter.x
+      + step(0.5, aVertexCorner) * (1.0 - step(1.5, aVertexCorner)) * aDelayJitter.y
+      + step(1.5, aVertexCorner) * (1.0 - step(2.5, aVertexCorner)) * aDelayJitter.z
+      + step(2.5, aVertexCorner) * aDelayJitter.w;
+    float tDelay = baseDelay + jitter;
+    float tTime = clamp(uTime - tDelay, 0.0, tDuration);
+    float tProgress = ease(tTime, 0.0, 1.0, tDuration);
 
-  // Fade ripple: 1 when assembled on the cloth, 0 when fully scattered
-  vClothFade = scale;
-  pos.z += clothZ * vClothFade;
+    vec3 posOffset = cubicBezier(aStartPosition, aControl0, aControl1, aEndPosition, tProgress);
+    clothPos = cellPos;
+    clothScale = 1.0 - tProgress; // SCALE_LINE
+    clothPos *= clothScale;
+    clothPos += posOffset;
 
-  // Analytical surface normal (amp varies with x so dzdx gets extra term)
-  float dAmpDx = -0.02; // d(amp)/dx for ampScale linear in x
-  float dzdPhase = k * cos(waveArg) * amp;
-  float dzdx = dzdPhase + sin(waveArg) * dAmpDx;
-  float dzdy = dzdPhase;
-  vClothNormal = normalize(vec3(-dzdx, -dzdy, 1.0));
+    vec3 planePos = cellPos + aStartPosition;
+    float phase = planePos.x + planePos.y;
+    float k = 0.1; float speed = 3.0;
+    float ampScale2 = max(1.0 - 0.5 * (planePos.x / 50.0), 0.35);
+    float amp = 2.0 * ampScale2;
+    float waveArg = phase * k + uClothTime * speed;
+    clothPos.z += sin(waveArg) * amp * clothScale;
+
+    float dAmpDx = -0.02;
+    float dzdPhase = k * cos(waveArg) * amp;
+    clothNormal = normalize(vec3(-(dzdPhase + sin(waveArg) * dAmpDx), -dzdPhase, 1.0));
+  }
+
+  // ────────────────────────────────────────────
+  // CUBE MODE
+  // ────────────────────────────────────────────
+  vec3 cubePos = vec3(0.0);
+  vec3 cubeNormal = vec3(0.0, 0.0, 1.0);
+
+  if (uAboutMode > 0.0) {
+    float gridLength = 7.0;
+    float centralize = (gridLength - 1.0) / 2.0;
+    float cubeID = mod(aCubeIndex, gridLength * gridLength * gridLength);
+    float rowID = floor(cubeID / gridLength);
+    float zID = mod(rowID, gridLength) - centralize;
+    rowID = floor(rowID / gridLength) - centralize;
+    float colID = mod(cubeID, gridLength) - centralize;
+
+    float cubeScale = 9.0;
+    float faceSize = cubeScale * 2.0 / 3.0;
+    cubePos = position * faceSize;
+    cubePos = cubeFaceRot(aCubeFace) * cubePos + cubeFaceOff(aCubeFace, faceSize * 0.5);
+
+    float intervalx = mod(colID + zID + 2.0 * centralize, 2.0 * gridLength);
+    float sx = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervalx));
+    float intervaly = mod(rowID + zID + 2.0 * centralize, 2.0 * gridLength);
+    float sy = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervaly));
+    float intervalz = mod(colID + rowID + 2.0 * centralize, 2.0 * gridLength);
+    float sz = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervalz));
+
+    cubePos.x *= 0.2 * (cubeScale + sx);
+    cubePos.x += 1.2 * rowID * (cubeScale + sx);
+    cubePos.y *= 0.2 * (cubeScale + sy);
+    cubePos.y += 1.2 * colID * (cubeScale + sy);
+    cubePos.z *= 0.2 * (cubeScale + sz);
+    cubePos.z += 1.2 * zID * (cubeScale + sz);
+
+    float rad1 = 3.0 * sin(0.1 * uCubeTime);
+    float rad2 = 3.0 * sin(0.1 * (uCubeTime + 1.0));
+    cubePos = rotateVec3(cubePos, rad1, vec3(1.0, 0.0, 0.0));
+    cubePos = rotateVec3(cubePos, rad2, vec3(0.0, 1.0, 0.0));
+
+    cubeNormal = rotateVec3(
+      rotateVec3(cubeFaceRot(aCubeFace) * vec3(0.0, 0.0, 1.0), rad1, vec3(1.0, 0.0, 0.0)),
+      rad2, vec3(0.0, 1.0, 0.0)
+    );
+
+    float totalCubes = gridLength * gridLength * gridLength;
+    cubePos *= step(aCubeIndex + 0.5, totalCubes);
+  }
+
+  // ────────────────────────────────────────────
+  // BLEND between modes
+  // ────────────────────────────────────────────
+  if (uAboutMode <= 0.0) {
+    pos = clothPos;
+    normal = clothNormal;
+    texUv = clothUv;
+    fade = clothScale;
+    blend = 0.0;
+  } else if (uAboutMode >= 1.0) {
+    pos = cubePos;
+    normal = cubeNormal;
+    texUv = vec2(0.0);
+    fade = 0.0;
+    blend = 1.0;
+  } else {
+    float Tween = getAnimationValue(uAboutMode, aCubeRandoms.x);
+    pos = mix(clothPos, cubePos, Tween);
+    normal = mix(clothNormal, cubeNormal, Tween);
+    texUv = mix(clothUv, vec2(0.0), Tween);
+    fade = mix(clothScale, 0.0, Tween);
+    blend = Tween;
+  }
+
+  vUv = texUv;
+  vClothFade = fade;
+  vAboutMode = blend;
+
+  pos = mouseRot * pos;
+  vClothNormal = mouseRot * normal;
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }
@@ -239,24 +415,43 @@ const fragmentShader = `
 uniform sampler2D map;
 uniform vec2 uUvScale;
 uniform vec2 uUvOffset;
-uniform float uFitMode; // 0.0 = cover, 1.0 = contain
+uniform float uFitMode;
 uniform float uViewAspect;
 uniform float uImageAspect;
+uniform vec3 uCubeColor;
+uniform sampler2D uPatternAtlas;
+uniform vec3 uCubeBgColor;
 
 varying vec2 vUv;
 varying vec3 vClothNormal;
 varying float vClothFade;
+varying float vAboutMode;
+varying float vCubeFace;
+varying vec2 vPatternUv;
 
-// Simple hash for fabric grain
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
 void main() {
+  // ── Cube solid color with face shading ──
+  vec3 cubeNorm = normalize(vClothNormal);
+  vec3 cubeLightDir = normalize(vec3(1.0, 1.0, 0.8));
+  float cubeDiffuse = max(dot(cubeNorm, cubeLightDir), 0.0);
+  float cubeLighting = 0.55 + 0.45 * cubeDiffuse;
+  float pattern = texture2D(uPatternAtlas, vPatternUv).r;
+  vec3 cubeBaseColor = mix(uCubeBgColor, uCubeColor, pattern);
+  vec4 cubeCol = vec4(cubeBaseColor * cubeLighting, 1.0);
+
+  if (vAboutMode > 0.999) {
+    gl_FragColor = cubeCol;
+    return;
+  }
+
+  // ── Cloth/texture mode ──
   vec2 uv;
   float inBounds = 1.0;
   if (uFitMode > 0.5) {
-    // Contain: letterbox/pillarbox so full image is visible
     float contentW = uImageAspect / uViewAspect;
     float contentH = uViewAspect / uImageAspect;
     float xMin = (1.0 - contentW) * 0.5;
@@ -274,49 +469,57 @@ void main() {
   vec4 texColor = texture2D(map, uv);
   texColor.a *= inBounds;
 
-  // ── Fabric weave texture ──────────────────────────────────
-  // Fine crosshatch pattern simulating warp/weft threads
   vec2 weaveCoord = vUv * 220.0;
   float threadH = smoothstep(0.3, 0.7, fract(weaveCoord.x));
   float threadV = smoothstep(0.3, 0.7, fract(weaveCoord.y));
-  // Alternate which thread sits on top (woven checkerboard)
   float checker = step(0.5, fract(floor(weaveCoord.x) * 0.5 + floor(weaveCoord.y) * 0.5));
   float weave = mix(threadH, threadV, checker);
-
-  // Subtle grain / fiber irregularity
   float grain = hash(floor(vUv * 600.0)) * 0.03;
-
-  // Combine: slight darkening in thread troughs + grain, fades with cloth
   float fabric = mix(1.0, 0.94 + 0.06 * weave - grain, vClothFade);
 
-  // ── Cloth lighting (normal shading only) ───────────────────
   vec3 normal = normalize(mix(vec3(0.0, 0.0, 1.0), vClothNormal, vClothFade));
   vec3 lightDir = normalize(vec3(1.0, 1.0, 0.8));
   float diffuse = max(dot(normal, lightDir), 0.0);
   float lighting = 0.78 + 0.22 * diffuse;
 
-  gl_FragColor = vec4(texColor.rgb * lighting * fabric, texColor.a);
+  vec4 clothCol = vec4(texColor.rgb * lighting * fabric, texColor.a);
+  gl_FragColor = mix(clothCol, cubeCol, vAboutMode);
 }
 `
 
 const vertexShaderOut = vertexShader.replace(
-  'float scale = 1.0 - tProgress; // SCALE_LINE',
-  'float scale = 1.0 - tProgress;'
+  'clothScale = 1.0 - tProgress; // SCALE_LINE',
+  'clothScale = 1.0 - tProgress;'
 )
 const vertexShaderIn = vertexShader.replace(
-  'float scale = 1.0 - tProgress; // SCALE_LINE',
-  'float scale = tProgress;'
+  'clothScale = 1.0 - tProgress; // SCALE_LINE',
+  'clothScale = tProgress;'
 )
+
+const _defaultAtlasTex = new THREE.DataTexture(
+  new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat,
+)
+_defaultAtlasTex.needsUpdate = true
 
 function createSlideMaterial(phase: 'in' | 'out'): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uClothTime: { value: 0 },
+      uCubeTime: { value: 0 },
+      uSegX: { value: segX },
+      uSegY: { value: segY },
+      uAboutMode: { value: 0 },
+      uMouseRotX: { value: 0 },
+      uMouseRotY: { value: 0 },
+      uCubeColor: { value: new THREE.Color(0xaaaaaa) },
+      uCubeBgColor: { value: new THREE.Color(0xfafafa) },
+      uPatternAtlas: { value: _defaultAtlasTex },
+      uPatternGridSize: { value: new THREE.Vector2(ATLAS_COLS, ATLAS_ROWS) },
       map: { value: new THREE.Texture() },
       uUvScale: { value: new THREE.Vector2(1, 1) },
       uUvOffset: { value: new THREE.Vector2(0, 0) },
-      uFitMode: { value: 1 }, // 1 = contain
+      uFitMode: { value: 1 },
       uViewAspect: { value: 1 },
       uImageAspect: { value: 1 },
     },
@@ -333,6 +536,8 @@ interface SlideMesh {
   setImage(image: HTMLImageElement | HTMLCanvasElement): void
   setViewAspect(aspect: number): void
   setTime(t: number): void
+  setAboutMode(on: boolean): void
+  setMouseRotation(rx: number, ry: number): void
   getImageAspect(): number
 }
 
@@ -380,6 +585,14 @@ function createSlide(phase: 'in' | 'out'): SlideMesh {
     },
     setTime(t: number) {
       material.uniforms.uTime.value = t
+    },
+    setAboutMode(on: boolean) {
+      material.depthWrite = on
+      material.depthTest = on
+    },
+    setMouseRotation(rx: number, ry: number) {
+      material.uniforms.uMouseRotX.value = rx
+      material.uniforms.uMouseRotY.value = ry
     },
     getImageAspect() {
       return imageAspect
@@ -536,16 +749,25 @@ export function createScene(container: HTMLElement) {
   const clock = new THREE.Clock()
   const tweenGroup = new TWEEN.Group()
   let raf = 0
+  const clothSpeed = 1.0
+  const cubeSpeed = 1.0
   function tick() {
     const elapsed = clock.getElapsedTime()
-    ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uClothTime.value = elapsed
-    ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uClothTime.value = elapsed
+    const outMat = slideOut.mesh.material as THREE.ShaderMaterial
+    const inMat = slideIn.mesh.material as THREE.ShaderMaterial
+    outMat.uniforms.uClothTime.value = elapsed * clothSpeed
+    inMat.uniforms.uClothTime.value = elapsed * clothSpeed
+    outMat.uniforms.uCubeTime.value = elapsed * cubeSpeed
+    inMat.uniforms.uCubeTime.value = elapsed * cubeSpeed
 
     tweenGroup.update()
     renderer.render(scene, camera)
     raf = requestAnimationFrame(tick)
   }
   tick()
+
+  let aboutModeTween: TWEEN.Tween<{ v: number }> | null = null
+  const aboutProxy = { v: 0 }
 
   function resize() {
     const w = container.clientWidth
@@ -560,20 +782,60 @@ export function createScene(container: HTMLElement) {
     const distance = Math.abs(camera.position.z - slideOut.mesh.position.z)
     const viewHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * distance
     const viewWidth = viewHeight * camera.aspect
-    const scaleX = (viewWidth / width) * sizeFactor
-    const scaleY = (viewHeight / height) * sizeFactor
-    slideOut.mesh.scale.set(scaleX, scaleY, 1)
-    slideIn.mesh.scale.set(scaleX, scaleY, 1)
+
+    // Cloth scale (viewport-fitted, non-uniform)
+    const clothSX = (viewWidth / width) * sizeFactor
+    const clothSY = (viewHeight / height) * sizeFactor
+    // Cube scale (fixed, uniform)
+    const cubeSU = (viewHeight / height) * sizeFactor
+
+    // Blend between cloth and cube scale using the current tween value
+    const t = aboutProxy.v
+    const sx = clothSX + (cubeSU - clothSX) * t
+    const sy = clothSY + (cubeSU - clothSY) * t
+    const sz = 1 + (cubeSU - 1) * t
+    slideOut.mesh.scale.set(sx, sy, sz)
+    slideIn.mesh.scale.set(sx, sy, sz)
 
     slideOut.setViewAspect(camera.aspect)
     slideIn.setViewAspect(camera.aspect)
   }
-  // Use ResizeObserver for reliable resize detection (handles DevTools open/close,
-  // container layout changes, etc. that window 'resize' may miss).
   const resizeObserver = new ResizeObserver(() => resize())
   resizeObserver.observe(container)
   window.addEventListener('resize', resize)
   resize()
+
+  function setAboutMode(on: boolean) {
+    if (aboutModeTween) aboutModeTween.stop()
+
+    const target = on ? 1 : 0
+    aboutModeTween = new TWEEN.Tween(aboutProxy, tweenGroup)
+      .to({ v: target }, 2500)
+      .easing(TWEEN.Easing.Quadratic.InOut)
+      .onUpdate(() => {
+        const v = aboutProxy.v
+        ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uAboutMode.value = v
+        ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uAboutMode.value = v
+        // Enable depth for 3D cubes when any cube is visible
+        const depthOn = v > 0.01
+        slideOut.setAboutMode(depthOn)
+        slideIn.setAboutMode(depthOn)
+        // Push slideOut fragments slightly deeper to prevent z-fighting with slideIn
+        const outMat = slideOut.mesh.material as THREE.ShaderMaterial
+        outMat.polygonOffset = v > 0.5
+        outMat.polygonOffsetFactor = 1
+        outMat.polygonOffsetUnits = 1
+        // Smoothly interpolate mesh scale each frame
+        resize()
+      })
+      .onComplete(() => { resize() })
+      .start()
+  }
+
+  function setMouseRotation(rx: number, ry: number) {
+    slideOut.setMouseRotation(rx, ry)
+    slideIn.setMouseRotation(rx, ry)
+  }
 
   return {
     renderer,
@@ -583,6 +845,22 @@ export function createScene(container: HTMLElement) {
     slideIn,
     tweenGroup,
     resize,
+    setAboutMode,
+    setMouseRotation,
+    setPatternAtlas(tex: THREE.Texture) {
+      const outMat = slideOut.mesh.material as THREE.ShaderMaterial
+      const inMat = slideIn.mesh.material as THREE.ShaderMaterial
+      outMat.uniforms.uPatternAtlas.value = tex
+      inMat.uniforms.uPatternAtlas.value = tex
+    },
+    setCubeColors(bg: THREE.Color, fg: THREE.Color) {
+      const outMat = slideOut.mesh.material as THREE.ShaderMaterial
+      const inMat = slideIn.mesh.material as THREE.ShaderMaterial
+      outMat.uniforms.uCubeBgColor.value.copy(bg)
+      inMat.uniforms.uCubeBgColor.value.copy(bg)
+      outMat.uniforms.uCubeColor.value.copy(fg)
+      inMat.uniforms.uCubeColor.value.copy(fg)
+    },
     destroy() {
       tweenGroup.removeAll()
       cancelAnimationFrame(raf)
