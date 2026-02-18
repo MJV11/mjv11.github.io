@@ -8,7 +8,7 @@ import { getAtlasCanvas } from '../utils/mosaicPatterns'
 
 /** Duration (ms) for the "rush to completion" settle when interrupted mid-transition. */
 const SETTLE_MS = 400
-const CUBE_ANIM_LABELS = ['cosine', 'scatter', 'wireframe', 'rubik', '4x4'] as const
+const CUBE_ANIM_LABELS = ['cube wave', 'scatter', 'wireframe', 'rubik', 'Two Cubed', 'Three Squared', 'Sine Rings'] as const
 const SCROLL_DEBOUNCE_MS = 300
 
 /** Mouse-tilt effect constants */
@@ -621,7 +621,7 @@ export function ImageCarousel({
         </button>
         <div className="flex flex-col items-center gap-0.5">
           <DialCounter current={cubeAnimMode + 1} total={CUBE_ANIM_LABELS.length} />
-          <span className="text-[10px] font-noto-sans tracking-widest uppercase opacity-50 text-black text-center whitespace-nowrap">
+          <span className="text-[10px] font-noto-sans tracking-widest uppercase opacity-50 text-black text-center w-[100px] h-[20px]">
             {CUBE_ANIM_LABELS[cubeAnimMode]}
           </span>
         </div>

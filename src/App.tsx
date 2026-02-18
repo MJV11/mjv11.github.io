@@ -33,6 +33,11 @@ function App() {
           <Nav />
         </div>
       </div>
+      {isTopPage && 
+        <p className='absolute top-0 left-0 w-1/3 p-[14px] z-20 font-jost text-[24px] font-medium text-black'>
+          Hello, I'm Max Vink. I'm a software engineer and cyclist based in Berkeley, CA.
+        </p>
+      }
       <main className='scroll-content flex-1 min-h-0 overflow-y-auto z-10'>
         {isReady && carouselImages.length > 0 && (
           <div
