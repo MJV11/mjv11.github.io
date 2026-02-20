@@ -515,7 +515,7 @@ export function ImageCarousel({
       <div ref={tiltWrapRef}>
         <div
           ref={clipRef}
-          className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0 cursor-pointer`}
+          className={`relative overflow-hidden bg-transparent ${sizeClassName} shrink-0 ${!isTopMode && !viewShift ? 'cursor-pointer' : ''}`}
           onClick={handleCanvasClick}
         >
           <div
