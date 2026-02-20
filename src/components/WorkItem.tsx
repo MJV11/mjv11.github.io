@@ -20,7 +20,7 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
 
   return (
     <div className="flex flex-col gap-6 py-16 px-6 animate-fadeIn h-full w-full md:w-[80%] z-10 mt-16">
-      <button className="flex text-sm font-jost flex-row w-fit gap-4 items-center justify-center hover:text-white hover:bg-black duration-300 transition-colors border-2 border-black px-2 py-1" onClick={onClose}>
+      <button className="flex text-sm font-jost flex-row w-fit gap-4 items-center justify-center bg-white hover:text-white hover:bg-black duration-300 transition-colors border-2 border-black px-2 py-1" onClick={onClose}>
         <PiCaretLeft size={12} />
         <span className='whitespace-nowrap'>back to works</span>
       </button>
@@ -55,16 +55,18 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
         ))}
       </div>
 
+      <div className="flex flex-col gap-2">
       <a className={`text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.site} target="_blank" rel="noopener noreferrer">
         {work.site ? <div className="flex flex-row gap-2 items-center justify-center">
           <span>visit site</span> <PiArrowSquareOut size={20} /> </div> : <span>site not available</span>}
       </a>
 
-      <a className={`text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.source} target="_blank" rel="noopener noreferrer">
+      <a className={`${!work.source ? 'hidden' : ''} text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.source} target="_blank" rel="noopener noreferrer">
         <div className="flex flex-row gap-2 items-center justify-center">
           <span>view code</span> <PiArrowSquareOut size={20} />
         </div>
       </a>
+      </div>
 
       {/* Description */}
       {work.description && <p className={`text-[16px] font-jost leading-relaxed border-2 px-2 py-1 ${work.colors.description}`}>
