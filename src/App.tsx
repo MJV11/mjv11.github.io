@@ -55,7 +55,7 @@ function App() {
             <div className={`absolute top-0 left-0 transition-all duration-300 ${(isExpanded || isContactPage) && isMobile ? 'opacity-0' : 'opacity-100'}`}>
               <ImageCarousel
                 images={carouselImages}
-                sizeClassName={`w-screen h-screen`}
+                sizeClassName={`w-screen h-[100dvh]`}
                 canvasScale={1.8}
                 sectionId={hasCarouselSection ? currentPage : undefined}
                 onIndexChange={handleIndexChange}
@@ -73,7 +73,7 @@ function App() {
               </div>
               {/* Works detail panel — slides in from the left */}
               <div
-                className={`shrink-0 overflow-y-auto transition-all duration-500 ease-in-out z-10 ${isExpanded ? 'w-full h-[calc(100vh-4rem)] md:h-screen' : 'w-0 h-0'}`}
+                className={`shrink-0 overflow-y-auto transition-all duration-500 ease-in-out z-10 ${isExpanded ? 'w-full h-[calc(100dvh-4rem)] md:h-screen' : 'w-0 h-0'}`}
                 style={{
                   opacity: isExpanded ? 1 : 0,
                   pointerEvents: isExpanded ? 'auto' : 'none',
@@ -84,7 +84,7 @@ function App() {
 
               {/* Contact panel — slides in from the left on contact page */}
               <div
-                className={`shrink-0 overflow-y-auto transition-all duration-500 ease-in-out z-10 ${isContactPage ? 'w-full md:w-[40%] h-[calc(100vh-4rem)] md:h-screen' : 'w-0 h-0'}`}
+                className={`shrink-0 overflow-y-auto transition-all duration-500 ease-in-out z-10 ${isContactPage ? 'w-full md:w-[40%] h-[calc(100dvh-4rem)] md:h-screen' : 'w-0 h-0'}`}
                 style={{
                   opacity: isContactPage ? 1 : 0,
                   pointerEvents: isContactPage ? 'auto' : 'none',
