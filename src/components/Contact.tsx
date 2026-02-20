@@ -38,7 +38,7 @@ export const Contact = () => {
                         {
                             title: 'Strava',
                             value: 'maxvink',
-                            href: 'https://strava.com/maxvink',
+                            href: 'https://www.strava.com/athletes/91344302',
                             style: 'text-orange-500 bg-white border-orange-500 hover:text-white hover:bg-orange-500',
                             icon: <FaStrava size={24}  />
                         },
@@ -50,13 +50,13 @@ export const Contact = () => {
                             icon: <FiInstagram size={24}  />
                         },
                     ].map((item) => (
-                        <a key={item.title} href={item.href} className={`font-jost tracking-widest font-medium text-[16px] px-2 md:px-16 py-4 border-2 flex flex-row items-center justify-start gap-4 md:gap-16 ${item.style}`}>
+                        <button key={item.title} onClick={() => window.open(item.href, '_blank')} className={`font-jost tracking-widest font-medium text-[16px] px-2 md:px-16 py-4 border-2 flex flex-row items-center justify-start gap-4 md:gap-16 ${item.style}`}>
                             {item.icon}
                             <div className='flex flex-row gap-2 items-center'>
                                 <span className='whitespace-nowrap'>{item.title}: {item.value}</span>
                                 <PiArrowSquareOutBold size={16} />
                             </div>
-                        </a>
+                        </button>
                     ))
                 }
             </div>
