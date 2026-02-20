@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 
 /** Pages that have URLs. Path '/' maps to defaultPage. */
-export const NAV_PAGES = ['top', 'works', 'about'] as const
-export const DEFAULT_PAGE = 'top'
+export const NAV_PAGES = ['root', 'works', 'contact'] as const
+export const DEFAULT_PAGE = 'root'
 
 function pathnameToPage(pathname: string): string {
   const segment = pathname.replace(/^\/+|\/+$/g, '') || ''

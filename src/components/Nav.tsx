@@ -1,11 +1,10 @@
-import { useNav } from '../contexts/NavContext'
-import { NAV_PAGES } from '../contexts/NavContext'
+import { useNav, NAV_PAGES } from '../contexts/NavContext'
 
 export const Nav = () => {
     const { currentPage, setCurrentPage } = useNav()
 
     return (
-        <div className='flex flex-row items-center justify-end gap-4 px-5'>
+        <div className='flex flex-row items-center justify-end w-screen gap-4 px-5'>
             {NAV_PAGES.map((item) => (
                 <button
                     key={item}

@@ -6,13 +6,14 @@
  * 2. Add the section id to SECTIONS_WITH_IMAGES and a loader in loaders below.
  */
 
-export const SECTIONS_WITH_IMAGES = ['works'] as const
+export const SECTIONS_WITH_IMAGES = ['works', 'contact'] as const
 export type SectionWithImages = (typeof SECTIONS_WITH_IMAGES)[number]
 
 type SectionImageLoader = () => Promise<string[]>
 
 const loaders: Record<string, SectionImageLoader> = {
   works: () => import('../data/sectionImages/works').then((m) => m.default),
+  contact: () => import('../data/sectionImages/contact').then((m) => m.default),
 }
 
 async function getSectionImageUrls(sectionId: string): Promise<string[]> {

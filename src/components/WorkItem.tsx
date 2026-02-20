@@ -19,10 +19,10 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
   }, [work?.colorContext, setPalette])
 
   return (
-    <div className="flex flex-col gap-6 py-16 px-6 animate-fadeIn h-full w-[80%] z-10 mt-16">
+    <div className="flex flex-col gap-6 py-16 px-6 animate-fadeIn h-full w-full md:w-[80%] z-10 mt-16">
       <button className="flex text-sm font-jost flex-row w-fit gap-4 items-center justify-center hover:text-white hover:bg-black duration-300 transition-colors border-2 border-black px-2 py-1" onClick={onClose}>
         <PiCaretLeft size={12} />
-        <span>back to works</span>
+        <span className='whitespace-nowrap'>back to works</span>
       </button>
 
       {/* Title + external link */}

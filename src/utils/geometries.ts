@@ -274,6 +274,23 @@ float ease(float t, float b, float c, float d) {
   return b + c * 0.5 * (t * t * t + 2.0);
 }
 
+float modeScale(float mode) {
+  if (mode < 0.5)               return 9.0;  // cosine wave
+  if (mode < 1.5)               return 7.0;  // scatter
+  if (mode > 2.5 && mode < 3.5) return 14.0; // rubik
+  return 8.0;
+}
+
+float modeMaxCubes(float mode) {
+  if (mode > 1.5 && mode < 2.5) return 1331.0; // wireframe
+  if (mode > 2.5 && mode < 3.5) return 27.0;   // rubik
+  if (mode > 3.5 && mode < 4.5) return 1000.0; // two cubed
+  if (mode > 4.5 && mode < 5.5) return 1125.0; // three squared
+  if (mode > 5.5 && mode < 6.5) return 3600.0; // sine rings
+  if (mode > 6.5)               return 390.0;  // orbital rings
+  return 343.0; // cosine wave + scatter
+}
+
 vec2 ringToGrid(float i) {
   i = mod(i, 8.0);
   float s0 = step(i, 2.5);
@@ -359,34 +376,27 @@ void main() {
     float zID;
     float colID;
 
-    // Per-mode cube scales: cosine=9, scatter=7, wireframe=8, rubik=14, 4x4=8
-    float scaleFrom = 9.0;
-    if (uCubeAnimFrom > 0.5 && uCubeAnimFrom < 1.5) scaleFrom = 7.0;
-    else if (uCubeAnimFrom > 1.5 && uCubeAnimFrom < 2.5) scaleFrom = 8.0;
-    else if (uCubeAnimFrom > 2.5 && uCubeAnimFrom < 3.5) scaleFrom = 14.0;
-    else if (uCubeAnimFrom > 3.5 && uCubeAnimFrom < 4.5) scaleFrom = 8.0;
-    else if (uCubeAnimFrom > 4.5 && uCubeAnimFrom < 5.5) scaleFrom = 8.0;
-    else if (uCubeAnimFrom > 5.5) scaleFrom = 8.0;
+    float cubeScale    = mix(modeScale(uCubeAnimFrom),    modeScale(uCubeAnimTo),    uCubeAnimT);
+    float maxCubesFrom = modeMaxCubes(uCubeAnimFrom);
+    float maxCubesTo   = modeMaxCubes(uCubeAnimTo);
 
-    float scaleTo = 9.0;
-    if (uCubeAnimTo > 0.5 && uCubeAnimTo < 1.5) scaleTo = 7.0;
-    else if (uCubeAnimTo > 1.5 && uCubeAnimTo < 2.5) scaleTo = 8.0;
-    else if (uCubeAnimTo > 2.5 && uCubeAnimTo < 3.5) scaleTo = 14.0;
-    else if (uCubeAnimTo > 3.5 && uCubeAnimTo < 4.5) scaleTo = 8.0;
-    else if (uCubeAnimTo > 4.5 && uCubeAnimTo < 5.5) scaleTo = 8.0;
-    else if (uCubeAnimTo > 5.5) scaleTo = 8.0;
-    float cubeScale = mix(scaleFrom, scaleTo, uCubeAnimT);
+    float validFrom = step(aCubeIndex + 0.5, maxCubesFrom);
+    float validTo   = step(aCubeIndex + 0.5, maxCubesTo);
+    float faceScale = mix(mix(0.9, 1.0, validFrom), mix(0.9, 1.0, validTo), uCubeAnimT);
 
     float faceSize = cubeScale * 2.0 / 3.0;
-    vec3 faceLocal = cubeFaceRot(aCubeFace) * (position * faceSize) + cubeFaceOff(aCubeFace, faceSize * 0.5);
+    vec3 faceLocal = faceScale * (cubeFaceRot(aCubeFace) * (position * faceSize) + cubeFaceOff(aCubeFace, faceSize * 0.5));
     vec3 faceNorm = cubeFaceRot(aCubeFace) * vec3(0.0, 0.0, 1.0);
+
+    // ─── transition buffers (written to by each animation block) ─────
+    vec3 posFrom = faceLocal; vec3 normFrom = faceNorm;
+    vec3 posTo   = faceLocal; vec3 normTo   = faceNorm;
 
     // ────────────────────────────────────────────
     // CUBE ANIM 0 — Cosine wave motion
     // ────────────────────────────────────────────
-    vec3 gridPos = faceLocal;
-    vec3 gridNorm = faceNorm;
     if (uCubeAnimFrom < 0.5 || uCubeAnimTo < 0.5) {
+      vec3 p = faceLocal; vec3 n = faceNorm;
       gridLength = 7.0;
       centralize = (gridLength - 1.0) / 2.0;
       totalCubes = gridLength * gridLength * gridLength;
@@ -402,35 +412,32 @@ void main() {
       float sy = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervaly));
       float intervalz = mod(colID + rowID + 2.0 * centralize, 2.0 * gridLength);
       float sz = 0.5 * cos(4.0 * (uCubeTime + 0.2 * intervalz));
-      gridPos.x *= 0.2 * (cubeScale + sx);
-      gridPos.x += 1.2 * rowID * (cubeScale + sx);
-      gridPos.y *= 0.2 * (cubeScale + sy);
-      gridPos.y += 1.2 * colID * (cubeScale + sy);
-      gridPos.z *= 0.2 * (cubeScale + sz);
-      gridPos.z += 1.2 * zID * (cubeScale + sz);
+      p.x *= 0.2 * (cubeScale + sx); p.x += 1.2 * rowID * (cubeScale + sx);
+      p.y *= 0.2 * (cubeScale + sy); p.y += 1.2 * colID * (cubeScale + sy);
+      p.z *= 0.2 * (cubeScale + sz); p.z += 1.2 * zID   * (cubeScale + sz);
       float gRad1 = 3.0 * sin(0.1 * uCubeTime);
       float gRad2 = 3.0 * sin(0.1 * (uCubeTime + 1.0));
-      gridPos = rotateVec3(gridPos, gRad1, vec3(1.0, 0.0, 0.0));
-      gridPos = rotateVec3(gridPos, gRad2, vec3(0.0, 1.0, 0.0));
-      gridNorm = rotateVec3(rotateVec3(faceNorm, gRad1, vec3(1.0, 0.0, 0.0)), gRad2, vec3(0.0, 1.0, 0.0));
+      p = rotateVec3(rotateVec3(p,        gRad1, vec3(1.0, 0.0, 0.0)), gRad2, vec3(0.0, 1.0, 0.0));
+      n = rotateVec3(rotateVec3(faceNorm, gRad1, vec3(1.0, 0.0, 0.0)), gRad2, vec3(0.0, 1.0, 0.0));
+      if (uCubeAnimFrom < 0.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   < 0.5) { posTo   = p; normTo   = n; }
     }
 
     // ────────────────────────────────────────────
     // CUBE ANIM 1 — Scatter
     // ────────────────────────────────────────────
-    vec3 scatterPos = faceLocal;
-    vec3 scatterNorm = faceNorm;
     if ((uCubeAnimFrom > 0.5 && uCubeAnimFrom < 1.5) || (uCubeAnimTo > 0.5 && uCubeAnimTo < 1.5)) {
-      scatterPos *= 2.0;
-      float sRad1 = PI * 2.0 * sin(uCubeTime + aCubeRandoms.x);
-      float sRad2 = PI * 2.0 * sin(uCubeTime + aCubeRandoms.y);
-      vec3 cubeCenterTo = aCubeRandoms * 100.0;
-      scatterPos += cubeCenterTo;
+      vec3 p = faceLocal; vec3 n = faceNorm;
+      float scatterFar = step(200.0, aCubeIndex);
+      float distanceTier = mix(90.0, 500.0, scatterFar);
+      p *= 2.0;
+      vec3 cubeCenterTo = aCubeRandoms * distanceTier;
+      p += cubeCenterTo;
 
       // Per-cube wandering: a few cubes glide to new offsets at staggered times
-      float wanderSpeed = 0.15; // speed of the wandering motion
-      float wanderMin = 15.0;
-      float wanderMax = 30.0;
+      float wanderSpeed = 0.15;
+      float wanderMin = 25.0;
+      float wanderMax = 40.0;
       float wanderPhase = uCubeTime * wanderSpeed + aCubeRandoms.z * 17.0;
       float wStep = floor(wanderPhase);
       float wT = smoothstep(0.0, 0.15, fract(wanderPhase));
@@ -443,18 +450,19 @@ void main() {
       float wx1 = sign(rwx1) * mix(wanderMin, wanderMax, abs(rwx1));
       float wy1 = sign(rwy1) * mix(wanderMin, wanderMax, abs(rwy1));
       float wanderAxis = step(0.5, fract(aCubeRandoms.x * 7.3));
-      scatterPos.x += mix(wx0, wx1, wT) * (1.0 - wanderAxis);
-      scatterPos.y += mix(wy0, wy1, wT) * wanderAxis;
+      p.x += mix(wx0, wx1, wT) * (1.0 - wanderAxis);
+      p.y += mix(wy0, wy1, wT) * wanderAxis;
 
-      scatterPos = rotateVec3(scatterPos, uCubeTime * 0.3, vec3(0.3, 1.0, 0.2));
+      p = rotateVec3(p, uCubeTime * 0.3, vec3(0.3, 1.0, 0.2));
+      if (uCubeAnimFrom > 0.5 && uCubeAnimFrom < 1.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   > 0.5 && uCubeAnimTo   < 1.5) { posTo   = p; normTo   = n; }
     }
 
     // ────────────────────────────────────────────
     // CUBE ANIM 2 — Wireframe
     // ────────────────────────────────────────────
-    vec3 wirePos = faceLocal;
-    vec3 wireNorm = faceNorm;
     if ((uCubeAnimFrom > 1.5 && uCubeAnimFrom < 2.5) || (uCubeAnimTo > 1.5 && uCubeAnimTo < 2.5)) {
+      vec3 p = faceLocal; vec3 n = faceNorm;
       gridLength = 11.0;
       centralize = (gridLength - 1.0) / 2.0;
       totalCubes = gridLength * gridLength * gridLength;
@@ -463,60 +471,49 @@ void main() {
       zID = mod(rowID, gridLength) - centralize;
       rowID = floor(rowID / gridLength) - centralize;
       colID = mod(cubeID, gridLength) - centralize;
-      
-      float onCol = step(centralize - 1.5, abs(colID)); // check if the cube is on the edge of the grid
+
+      float onCol = step(centralize - 1.5, abs(colID));
       float onRow = step(centralize - 1.5, abs(rowID));
       float onZ   = step(centralize - 1.5, abs(zID));
       float isEdge = step(1.5, onCol + onRow + onZ);
 
       float wireSpacing = 1.065;
-      wirePos.x *= 0.2 * cubeScale * isEdge;
-      wirePos.x += wireSpacing * rowID * cubeScale;
-      wirePos.y *= 0.2 * cubeScale * isEdge;
-      wirePos.y += wireSpacing * colID * cubeScale;
-      wirePos.z *= 0.2 * cubeScale * isEdge;
-      wirePos.z += wireSpacing * zID * cubeScale;
+      p.x *= 0.2 * cubeScale * isEdge; p.x += wireSpacing * rowID * cubeScale;
+      p.y *= 0.2 * cubeScale * isEdge; p.y += wireSpacing * colID * cubeScale;
+      p.z *= 0.2 * cubeScale * isEdge; p.z += wireSpacing * zID   * cubeScale;
 
-      float wR1 = 0.4 * sin(0.15 * uCubeTime);
-      float wR2 = 0.4 * sin(0.15 * (uCubeTime + 2.0));
-      wirePos = rotateVec3(wirePos, wR1, vec3(1.0, 0.0, 0.0));
-      wirePos = rotateVec3(wirePos, wR2, vec3(0.0, 1.0, 0.0));
-      wireNorm = rotateVec3(rotateVec3(faceNorm, wR1, vec3(1.0, 0.0, 0.0)), wR2, vec3(0.0, 1.0, 0.0));
+      float wR1 = 2.0 * sin(0.15 * uCubeTime);
+      float wR2 = 2.0 * sin(0.15 * (uCubeTime + 2.0));
+      p = rotateVec3(rotateVec3(p,        wR1, vec3(1.0, 0.0, 0.0)), wR2, vec3(0.0, 1.0, 0.0));
+      n = rotateVec3(rotateVec3(faceNorm, wR1, vec3(1.0, 0.0, 0.0)), wR2, vec3(0.0, 1.0, 0.0));
+      if (uCubeAnimFrom > 1.5 && uCubeAnimFrom < 2.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   > 1.5 && uCubeAnimTo   < 2.5) { posTo   = p; normTo   = n; }
     }
 
     // ────────────────────────────────────────────
     // CUBE ANIM 3 — Rubik's cube
     // ────────────────────────────────────────────
-    vec3 rubikPos = faceLocal;
-    vec3 rubikNorm = faceNorm;
     if ((uCubeAnimFrom > 2.5 && uCubeAnimFrom < 3.5) || (uCubeAnimTo > 2.5 && uCubeAnimTo < 3.5)) {
+      vec3 p = faceLocal; vec3 n = faceNorm;
       float rGrid = 3.0;
       float rCent = 1.0;
       float rTotal = 27.0;
-      float isRubikCube = step(aCubeIndex + 0.5, rTotal);
       float rID = mod(aCubeIndex, rTotal);
       float rCol = mod(rID, rGrid) - rCent;
       float rRow = mod(floor(rID / rGrid), rGrid) - rCent;
       float rZ   = floor(rID / (rGrid * rGrid)) - rCent;
 
       float rSpacing = 1.9;
-      rubikPos.x *= 0.2 * cubeScale * isRubikCube;
-      rubikPos.x += rSpacing * rRow * cubeScale;
-      rubikPos.y *= 0.2 * cubeScale * isRubikCube;
-      rubikPos.y += rSpacing * rCol * cubeScale;
-      rubikPos.z *= 0.2 * cubeScale * isRubikCube;
-      rubikPos.z += rSpacing * rZ * cubeScale;
+      p.x *= 0.2 * cubeScale; p.x += rSpacing * rRow * cubeScale;
+      p.y *= 0.2 * cubeScale; p.y += rSpacing * rCol * cubeScale;
+      p.z *= 0.2 * cubeScale; p.z += rSpacing * rZ   * cubeScale;
 
-      float moveSpeed = 1.0;
-      float movePhase = uCubeTime * moveSpeed;
+      float movePhase = uCubeTime;
       float totalMovesF = floor(movePhase);
-      float moveT = fract(movePhase);
-      float easeT = moveT * moveT * (3.0 - 2.0 * moveT);
+      float easeT = fract(movePhase); easeT = easeT * easeT * (3.0 - 2.0 * easeT);
 
       int nCompleted = int(mod(totalMovesF, 128.0));
-      float cRow = rRow;
-      float cCol = rCol;
-      float cZ = rZ;
+      float cRow = rRow; float cCol = rCol; float cZ = rZ;
 
       for (int i = 0; i < 128; i++) {
         if (i >= nCompleted) break;
@@ -531,8 +528,8 @@ void main() {
         else if (aF < 1.5)  { inS = step(abs(cCol - lF), 0.5); sAxis = vec3(0.0, 1.0, 0.0); }
         else                 { inS = step(abs(cZ - lF), 0.5);   sAxis = vec3(0.0, 0.0, 1.0); }
 
-        rubikPos = rotateVec3(rubikPos, inS * PI * 0.5 * d, sAxis);
-        rubikNorm = rotateVec3(rubikNorm, inS * PI * 0.5 * d, sAxis);
+        p = rotateVec3(p, inS * PI * 0.5 * d, sAxis);
+        n = rotateVec3(n, inS * PI * 0.5 * d, sAxis);
 
         float nR = cRow, nC = cCol, nZ = cZ;
         if (aF < 0.5) {
@@ -560,30 +557,27 @@ void main() {
       else if (curAF < 1.5)  { curInSlice = step(abs(cCol - curLF), 0.5); curSliceAxis = vec3(0.0, 1.0, 0.0); }
       else                    { curInSlice = step(abs(cZ - curLF), 0.5);   curSliceAxis = vec3(0.0, 0.0, 1.0); }
 
-      rubikPos = rotateVec3(rubikPos, curAngle * curInSlice, curSliceAxis);
-      rubikNorm = rotateVec3(rubikNorm, curAngle * curInSlice, curSliceAxis);
+      p = rotateVec3(p, curAngle * curInSlice, curSliceAxis);
+      n = rotateVec3(n, curAngle * curInSlice, curSliceAxis);
 
       float rbR1 = 3.7 * sin(0.1 * uCubeTime);
       float rbR2 = 3.7 * sin(0.1 * (uCubeTime + 1.5));
-      rubikPos = rotateVec3(rubikPos, rbR1, vec3(1.0, 0.0, 0.0));
-      rubikPos = rotateVec3(rubikPos, rbR2, vec3(0.0, 1.0, 0.0));
-      rubikNorm = rotateVec3(rotateVec3(rubikNorm, rbR1, vec3(1.0, 0.0, 0.0)), rbR2, vec3(0.0, 1.0, 0.0));
-
-      totalCubes = 99999.0;
+      p = rotateVec3(rotateVec3(p, rbR1, vec3(1.0, 0.0, 0.0)), rbR2, vec3(0.0, 1.0, 0.0));
+      n = rotateVec3(rotateVec3(n, rbR1, vec3(1.0, 0.0, 0.0)), rbR2, vec3(0.0, 1.0, 0.0));
+      if (uCubeAnimFrom > 2.5 && uCubeAnimFrom < 3.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   > 2.5 && uCubeAnimTo   < 3.5) { posTo   = p; normTo   = n; }
     }
 
     // ────────────────────────────────────────────
     // CUBE ANIM 4 — 4x4 (2x2x2 of 5x5x5 wireframe cubes)
     // ────────────────────────────────────────────
-    vec3 fourPos = faceLocal;
-    vec3 fourNorm = faceNorm;
     if ((uCubeAnimFrom > 3.5 && uCubeAnimFrom < 4.5) || (uCubeAnimTo > 3.5 && uCubeAnimTo < 4.5)) {
-      float wGrid = 5.0; // amount of cubes per wireframe
-      float wCent = 2.0; // center offset for the 5x5x5 grid
+      vec3 p = faceLocal; vec3 n = faceNorm;
+      float wGrid = 5.0;
+      float wCent = 2.0;
       float wTotal = wGrid * wGrid * wGrid;
 
       float wfID = floor(aCubeIndex / wTotal);
-      float isInEight = step(wfID + 0.5, 8.0);
       float localIdx = mod(aCubeIndex, wTotal);
 
       float lRow = floor(localIdx / wGrid);
@@ -591,48 +585,37 @@ void main() {
       lRow = floor(lRow / wGrid) - wCent;
       float lCol = mod(localIdx, wGrid) - wCent;
 
-      float onCol = step(wCent - 0.5, abs(lCol));
-      float onRow = step(wCent - 0.5, abs(lRow));
-      float onZ   = step(wCent - 0.5, abs(lZ));
-      float isEdge = step(1.5, onCol + onRow + onZ);
+      float isEdge = step(1.5, step(wCent - 0.5, abs(lCol)) + step(wCent - 0.5, abs(lRow)) + step(wCent - 0.5, abs(lZ)));
 
-      float fourMask = isEdge * isInEight;
       float wireSpacing = 1.065;
-      fourPos.x *= 0.2 * cubeScale * fourMask;
-      fourPos.x += wireSpacing * lRow * cubeScale;
-      fourPos.y *= 0.2 * cubeScale * fourMask;
-      fourPos.y += wireSpacing * lCol * cubeScale;
-      fourPos.z *= 0.2 * cubeScale * fourMask;
-      fourPos.z += wireSpacing * lZ * cubeScale;
+      p.x *= 0.2 * cubeScale * isEdge; p.x += wireSpacing * lRow * cubeScale;
+      p.y *= 0.2 * cubeScale * isEdge; p.y += wireSpacing * lCol * cubeScale;
+      p.z *= 0.2 * cubeScale * isEdge; p.z += wireSpacing * lZ   * cubeScale;
 
       float superSpacing = (wGrid + 1.0) * wireSpacing * cubeScale;
-      float wfX = mod(wfID, 2.0) - 0.5;
-      float wfY = mod(floor(wfID / 2.0), 2.0) - 0.5;
-      float wfZ = floor(wfID / 4.0) - 0.5;
-      fourPos.x += wfX * superSpacing;
-      fourPos.y += wfY * superSpacing;
-      fourPos.z += wfZ * superSpacing;
+      float wfIDWrapped = mod(wfID, 8.0);
+      p.x += (mod(wfIDWrapped, 2.0) - 0.5) * superSpacing;
+      p.y += (mod(floor(wfIDWrapped / 2.0), 2.0) - 0.5) * superSpacing;
+      p.z += (floor(wfIDWrapped / 4.0) - 0.5) * superSpacing;
 
       float fR1 = 2.0 * sin(0.12 * uCubeTime);
       float fR2 = 2.0 * cos(0.12 * (uCubeTime + 2.0));
-      fourPos = rotateVec3(fourPos, fR1, vec3(1.0, 0.0, 0.0));
-      fourPos = rotateVec3(fourPos, fR2, vec3(0.0, 1.0, 0.0));
-      fourNorm = rotateVec3(rotateVec3(faceNorm, fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
-      totalCubes = 99999.0;
+      p = rotateVec3(rotateVec3(p,        fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
+      n = rotateVec3(rotateVec3(faceNorm, fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
+      if (uCubeAnimFrom > 3.5 && uCubeAnimFrom < 4.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   > 3.5 && uCubeAnimTo   < 4.5) { posTo   = p; normTo   = n; }
     }
 
     // ────────────────────────────────────────────
     // CUBE ANIM 5 — Three Squared (3x3 flat grid of wireframe cubes, center missing)
     // ────────────────────────────────────────────
-    vec3 fivePos = faceLocal;
-    vec3 fiveNorm = faceNorm;
     if ((uCubeAnimFrom > 4.5 && uCubeAnimFrom < 5.5) || (uCubeAnimTo > 4.5 && uCubeAnimTo < 5.5)) {
-      float wGrid = 5.0; // width of individual wireframes
-      float wCent = 2.0; // hollow space inside the wireframe grid
+      vec3 p = faceLocal; vec3 n = faceNorm;
+      float wGrid = 5.0;
+      float wCent = 2.0;
       float wTotal = wGrid * wGrid * wGrid;
 
       float wfID = floor(aCubeIndex / wTotal);
-      float isInNine = step(wfID + 0.5, 9.0);
       float localIdx = mod(aCubeIndex, wTotal);
 
       float lRow = floor(localIdx / wGrid);
@@ -640,99 +623,124 @@ void main() {
       lRow = floor(lRow / wGrid) - wCent;
       float lCol = mod(localIdx, wGrid) - wCent;
 
-      float onCol = step(wCent - 0.5, abs(lCol));
-      float onRow = step(wCent - 0.5, abs(lRow));
-      float onZ   = step(wCent - 0.5, abs(lZ));
-      float isEdge = step(1.5, onCol + onRow + onZ);
+      float isEdge = step(1.5, step(wCent - 0.5, abs(lCol)) + step(wCent - 0.5, abs(lRow)) + step(wCent - 0.5, abs(lZ)));
 
-      float gridX = mod(wfID, 3.0) - 1.0;
-      float gridY = floor(wfID / 3.0) - 1.0;
+      float wfIDWrapped = mod(wfID, 9.0);
+      float gridX = mod(wfIDWrapped, 3.0) - 1.0;
+      float gridY = floor(wfIDWrapped / 3.0) - 1.0;
       float isCenter = (1.0 - step(0.5, abs(gridX))) * (1.0 - step(0.5, abs(gridY)));
-      float fiveMask = isEdge * isInNine * (1.0 - isCenter);
+      float mask = isEdge * (1.0 - isCenter);
 
       float wireSpacing = 1.065;
-      fivePos.x *= 0.2 * cubeScale * fiveMask;
-      fivePos.x += wireSpacing * lRow * cubeScale;
-      fivePos.y *= 0.2 * cubeScale * fiveMask;
-      fivePos.y += wireSpacing * lCol * cubeScale;
-      fivePos.z *= 0.2 * cubeScale * fiveMask;
-      fivePos.z += wireSpacing * lZ * cubeScale;
+      p.x *= 0.2 * cubeScale * mask; p.x += wireSpacing * lRow * cubeScale;
+      p.y *= 0.2 * cubeScale * mask; p.y += wireSpacing * lCol * cubeScale;
+      p.z *= 0.2 * cubeScale * mask; p.z += wireSpacing * lZ   * cubeScale;
 
       float superSpacing = (wGrid + 1.0) * wireSpacing * cubeScale;
-      fivePos.x += gridX * superSpacing;
-      fivePos.y += gridY * superSpacing;
+      p.x += gridX * superSpacing;
+      p.y += gridY * superSpacing;
 
       float fR1 = 2.0 * sin(0.12 * uCubeTime);
       float fR2 = 2.0 * cos(0.12 * (uCubeTime + 2.0));
-      fivePos = rotateVec3(fivePos, fR1, vec3(1.0, 0.0, 0.0));
-      fivePos = rotateVec3(fivePos, fR2, vec3(0.0, 1.0, 0.0));
-      fiveNorm = rotateVec3(rotateVec3(faceNorm, fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
-      totalCubes = 99999.0;
+      p = rotateVec3(rotateVec3(p,        fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
+      n = rotateVec3(rotateVec3(faceNorm, fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
+      if (uCubeAnimFrom > 4.5 && uCubeAnimFrom < 5.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   > 4.5 && uCubeAnimTo   < 5.5) { posTo   = p; normTo   = n; }
     }
 
     // ────────────────────────────────────────────
     // CUBE ANIM 6 — Sine Rings (flat grid, concentric rings raised by sine wave)
     // ────────────────────────────────────────────
-    vec3 sixPos = faceLocal;
-    vec3 sixNorm = faceNorm;
-    if (uCubeAnimFrom > 5.5 || uCubeAnimTo > 5.5) {
+    if ((uCubeAnimFrom > 5.5 && uCubeAnimFrom < 6.5) || (uCubeAnimTo > 5.5 && uCubeAnimTo < 6.5)) {
+      vec3 p = faceLocal; vec3 n = faceNorm;
       float flatSize = 60.0;
-      float flatTotal = flatSize * flatSize;
-      float flatID = mod(aCubeIndex, flatTotal);
-      float isInFlat = step(aCubeIndex + 0.5, flatTotal);
+      float flatID = mod(aCubeIndex, flatSize * flatSize);
 
       float fCol = mod(flatID, flatSize) - (flatSize - 1.0) * 0.5;
       float fRow = floor(flatID / flatSize) - (flatSize - 1.0) * 0.5;
       float ring = floor(max(abs(fCol), abs(fRow)) + 0.5);
 
-      float notMiddleRing = step(1.5, ring);
-      float sixMask = isInFlat * notMiddleRing;
-      float spacing = .525;
-      sixPos.x *= 0.1 * cubeScale * sixMask;
-      sixPos.x += fCol * spacing * cubeScale;
-      sixPos.z *= 0.1 * cubeScale * sixMask;
-      sixPos.z += fRow * spacing * cubeScale;
-      sixPos.y *= 0.1 * cubeScale * sixMask;
-
-      float waveAmp = 1.35;
-      float waveFreq = 0.4;
-      float waveSpeed = 2.0;
-      sixPos.y += waveAmp * sin(ring * waveFreq - uCubeTime * waveSpeed) * cubeScale;
+      float mask = step(1.5, ring);
+      float spacing = 0.525;
+      p.x *= 0.1 * cubeScale * mask; p.x += fCol * spacing * cubeScale;
+      p.z *= 0.1 * cubeScale * mask; p.z += fRow * spacing * cubeScale;
+      p.y *= 0.1 * cubeScale * mask;
+      p.y += 1.35 * sin(ring * 0.4 - uCubeTime * 2.0) * cubeScale;
 
       float fR1 = 2.0 * sin(0.12 * uCubeTime);
       float fR2 = 2.0 * sin(0.12 * (uCubeTime + 2.0));
-      sixPos = rotateVec3(sixPos, fR1, vec3(1.0, 0.0, 0.0));
-      sixPos = rotateVec3(sixPos, fR2, vec3(0.0, 1.0, 0.0));
-      sixNorm = rotateVec3(rotateVec3(faceNorm, fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
-
-      totalCubes = 99999.0;
+      p = rotateVec3(rotateVec3(p,        fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
+      n = rotateVec3(rotateVec3(faceNorm, fR1, vec3(1.0, 0.0, 0.0)), fR2, vec3(0.0, 1.0, 0.0));
+      if (uCubeAnimFrom > 5.5 && uCubeAnimFrom < 6.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   > 5.5 && uCubeAnimTo   < 6.5) { posTo   = p; normTo   = n; }
     }
 
     // ────────────────────────────────────────────
-    // CUBE ANIM BLEND — from/to direct transition
+    // CUBE ANIM 7 — Orbital Rings
+    // 10 concentric rings in the XZ plane (Y is the rotation axis).
+    // Tiles stand upright: face is parallel to Y, so each tile faces radially
+    // outward like a fence panel around a horizontal ring.
+    // Arc-length is programmatic (ring closes edge-to-edge).
+    // Precession: rotate around X by A*sin(t) and around Z by A*cos(t).
+    // These are 90° out of phase → the disk Y-axis traces a smooth cone.
     // ────────────────────────────────────────────
-    vec3 posFrom = gridPos;
-    vec3 normFrom = gridNorm;
-    if (uCubeAnimFrom > 0.5 && uCubeAnimFrom < 1.5) { posFrom = scatterPos; normFrom = scatterNorm; }
-    else if (uCubeAnimFrom > 1.5 && uCubeAnimFrom < 2.5) { posFrom = wirePos; normFrom = wireNorm; }
-    else if (uCubeAnimFrom > 2.5 && uCubeAnimFrom < 3.5) { posFrom = rubikPos; normFrom = rubikNorm; }
-    else if (uCubeAnimFrom > 3.5 && uCubeAnimFrom < 4.5) { posFrom = fourPos; normFrom = fourNorm; }
-    else if (uCubeAnimFrom > 4.5 && uCubeAnimFrom < 5.5) { posFrom = fivePos; normFrom = fiveNorm; }
-    else if (uCubeAnimFrom > 5.5) { posFrom = sixPos; normFrom = sixNorm; }
+    if (uCubeAnimFrom > 6.5 || uCubeAnimTo > 6.5) {
+      vec3 p = faceLocal; vec3 n = faceNorm;
+      float rsN    = 10.0;
+      float rsM    = 126.0;
+      float rsRMin = 20.0;
+      float rsRMax = 90.0;
+      float rsArc  = 4.5;
 
-    vec3 posTo = gridPos;
-    vec3 normTo = gridNorm;
-    if (uCubeAnimTo > 0.5 && uCubeAnimTo < 1.5) { posTo = scatterPos; normTo = scatterNorm; }
-    else if (uCubeAnimTo > 1.5 && uCubeAnimTo < 2.5) { posTo = wirePos; normTo = wireNorm; }
-    else if (uCubeAnimTo > 2.5 && uCubeAnimTo < 3.5) { posTo = rubikPos; normTo = rubikNorm; }
-    else if (uCubeAnimTo > 3.5 && uCubeAnimTo < 4.5) { posTo = fourPos; normTo = fourNorm; }
-    else if (uCubeAnimTo > 4.5 && uCubeAnimTo < 5.5) { posTo = fivePos; normTo = fiveNorm; }
-    else if (uCubeAnimTo > 5.5) { posTo = sixPos; normTo = sixNorm; }
+      float rsRingID  = mod(floor(aCubeIndex / rsM), rsN);
+      float rsLocalID = mod(aCubeIndex, rsM);
 
-    cubePos = mix(posFrom, posTo, uCubeAnimT);
-    cubeNormal = normalize(mix(normFrom, normTo, uCubeAnimT));
+      float rsT = sqrt(rsRingID / max(rsN - 1.0, 1.0));
+      float rsR = rsRMin + (rsRMax - rsRMin) * rsT;
 
-    cubePos *= step(aCubeIndex + 0.5, totalCubes);
+      // Round tile count so ring closes edge-to-edge; back-compute exact arc.
+      float rsNI        = max(3.0, floor(2.0 * PI * rsR / rsArc + 0.5));
+      float rsActualArc = 2.2 * PI * rsR / rsNI;
+      float rsTileX     = rsActualArc * 3.0 / (cubeScale * 2.0);
+
+      // Rings in the XZ plane, axis = Y
+      float rsFlow  = 0.03 * (mod(rsRingID * rsRingID, 5.0) + 1.0);
+      float rsTheta = fract(rsLocalID / rsNI) * 2.0 * PI + uCubeTime * rsFlow;
+
+      vec3 rsRadial  = vec3(cos(rsTheta), 0.0, sin(rsTheta));
+      vec3 rsTangent = vec3(-sin(rsTheta), 0.0, cos(rsTheta));
+      vec3 rsAxis    = vec3(0.0, 1.0, 0.0);
+
+      // Frame: X=tangent (arc), Y=radial (thin), Z=axis (height = Y direction).
+      // The face whose local normal is Y maps to rsRadial → tiles face radially
+      // outward, surface spanning tangential * Y (parallel to rotation axis).
+      mat3 rsFrame = mat3(rsTangent, rsRadial, rsAxis);
+
+      vec3 tile = faceLocal;
+      tile.x *= rsTileX; tile.y *= 0.05; tile.z *= rsTileX;
+
+      p = rsR * rsRadial + rsFrame * tile;
+      n = rsFrame * faceNorm;
+
+      // ── Sin/cos precession: each ring has a different phase ──
+      float rsPhase    = mod(rsRingID * rsRingID, rsN) * 2.0;
+      float rsSinAngle = 0.2 * sin(uCubeTime * 0.2 + rsPhase);
+      float rsCosAngle = 0.2 * cos(uCubeTime * 0.2 + rsPhase);
+      p = rotateVec3(p, rsSinAngle, vec3(1.0, 0.0, 0.0));
+      n = rotateVec3(n, rsSinAngle, vec3(1.0, 0.0, 0.0));
+      p = rotateVec3(p, rsCosAngle, vec3(0.0, 0.0, 1.0));
+      n = rotateVec3(n, rsCosAngle, vec3(0.0, 0.0, 1.0));
+
+      float rsTiltAngle = PI / 6.0;
+      p = rotateVec3(p, rsTiltAngle, vec3(1.0, 0.0, 0.0));
+      n = rotateVec3(n, rsTiltAngle, vec3(1.0, 0.0, 0.0));
+      if (uCubeAnimFrom > 6.5) { posFrom = p; normFrom = n; }
+      if (uCubeAnimTo   > 6.5) { posTo   = p; normTo   = n; }
+    }
+
+    float cubeBlend = getAnimationValue(uCubeAnimT, aCubeRandoms.y);
+    cubePos = mix(posFrom, posTo, cubeBlend);
+    cubeNormal = normalize(mix(normFrom, normTo, cubeBlend));
   }
 
   // ────────────────────────────────────────────
@@ -1133,6 +1141,23 @@ export function createScene(container: HTMLElement) {
   let cubeAnimTween: TWEEN.Tween<{ t: number }> | null = null
   let cubeAnimCurrent = 0
 
+  // Horizontal view shift: positive fraction shifts the scene LEFT so it appears
+  // centred in the right portion of the viewport when a side panel is present.
+  let viewShiftFraction = 0
+  let viewShiftTween: TWEEN.Tween<{ f: number }> | null = null
+
+  function applyCameraShift() {
+    const cw = container.clientWidth
+    const ch = container.clientHeight
+    if (cw <= 0 || ch <= 0) return
+    const distance = Math.abs(camera.position.z - slideOut.mesh.position.z)
+    const viewHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * distance
+    const viewWidth = viewHeight * (cw / ch)
+    // Convert viewport-fraction shift to world-space camera offset.
+    // container is canvasScale × viewport, so 1 viewport px = viewWidth/cw world units.
+    camera.position.x = viewShiftFraction * (window.innerWidth / cw) * viewWidth
+  }
+
   function resize() {
     const w = container.clientWidth
     const h = container.clientHeight
@@ -1163,6 +1188,8 @@ export function createScene(container: HTMLElement) {
 
     slideOut.setViewAspect(camera.aspect)
     slideIn.setViewAspect(camera.aspect)
+
+    applyCameraShift()
   }
   const resizeObserver = new ResizeObserver(() => resize())
   resizeObserver.observe(container)
@@ -1201,6 +1228,23 @@ export function createScene(container: HTMLElement) {
     slideIn.setMouseRotation(rx, ry)
   }
 
+  function setViewShift(fraction: number) {
+    if (viewShiftTween) viewShiftTween.stop()
+    const proxy = { f: viewShiftFraction }
+    viewShiftTween = new TWEEN.Tween(proxy, tweenGroup)
+      .to({ f: fraction }, 500)
+      .easing(TWEEN.Easing.Quadratic.InOut)
+      .onUpdate(() => {
+        viewShiftFraction = proxy.f
+        applyCameraShift()
+      })
+      .onComplete(() => {
+        viewShiftFraction = fraction
+        applyCameraShift()
+      })
+      .start()
+  }
+
   return {
     renderer,
     scene,
@@ -1211,6 +1255,7 @@ export function createScene(container: HTMLElement) {
     resize,
     setTopMode,
     setMouseRotation,
+    setViewShift,
     setCubeAnimation(mode: number) {
       if (cubeAnimTween) cubeAnimTween.stop()
       const from = cubeAnimCurrent
@@ -1222,8 +1267,8 @@ export function createScene(container: HTMLElement) {
       inU.uCubeAnimTo.value = mode
       const proxy = { t: 0 }
       cubeAnimTween = new TWEEN.Tween(proxy, tweenGroup)
-        .to({ t: 1 }, 1500)
-        .easing(TWEEN.Easing.Quadratic.InOut)
+        .to({ t: 1 }, 2500)
+        .easing(TWEEN.Easing.Linear.None)
         .onUpdate(() => {
           outU.uCubeAnimT.value = proxy.t
           inU.uCubeAnimT.value = proxy.t
