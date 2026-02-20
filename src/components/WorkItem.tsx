@@ -56,16 +56,16 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
       </div>
 
       <div className="flex flex-col gap-2">
-      <a className={`text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.site} target="_blank" rel="noopener noreferrer">
-        {work.site ? <div className="flex flex-row gap-2 items-center justify-center">
-          <span>visit site</span> <PiArrowSquareOut size={20} /> </div> : <span>site not available</span>}
-      </a>
+        <a className={`text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.site} target="_blank" rel="noopener noreferrer">
+          {work.site ? <div className="flex flex-row gap-2 items-center justify-center">
+            <span>visit site</span> <PiArrowSquareOut size={20} /> </div> : <span>site not available</span>}
+        </a>
 
-      <a className={`${!work.source ? 'hidden' : ''} text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.source} target="_blank" rel="noopener noreferrer">
-        <div className="flex flex-row gap-2 items-center justify-center">
-          <span>view code</span> <PiArrowSquareOut size={20} />
-        </div>
-      </a>
+        <a className={`${!work.source ? 'hidden' : ''} text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.source} target="_blank" rel="noopener noreferrer">
+          <div className="flex flex-row gap-2 items-center justify-center">
+            <span>view code</span> <PiArrowSquareOut size={20} />
+          </div>
+        </a>
       </div>
 
       {/* Description */}
