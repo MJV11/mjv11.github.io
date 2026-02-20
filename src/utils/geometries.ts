@@ -1196,29 +1196,32 @@ export function createScene(container: HTMLElement) {
   window.addEventListener('resize', resize)
   resize()
 
-  function setTopMode(on: boolean) {
+  function applyTopModeValue(v: number) {
+    topProxy.v = v
+    ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uTopMode.value = v
+    ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uTopMode.value = v
+    const depthOn = v > 0.01
+    slideOut.setTopMode(depthOn)
+    slideIn.setTopMode(depthOn)
+    const outMat = slideOut.mesh.material as THREE.ShaderMaterial
+    outMat.polygonOffset = v > 0.5
+    outMat.polygonOffsetFactor = 1
+    outMat.polygonOffsetUnits = 1
+    resize()
+  }
+
+  function setTopMode(on: boolean, immediate = false) {
     if (topModeTween) topModeTween.stop()
 
     const target = on ? 1 : 0
+    if (immediate) {
+      applyTopModeValue(target)
+      return
+    }
     topModeTween = new TWEEN.Tween(topProxy, tweenGroup)
       .to({ v: target }, 2500)
       .easing(TWEEN.Easing.Quadratic.InOut)
-      .onUpdate(() => {
-        const v = topProxy.v
-        ;(slideOut.mesh.material as THREE.ShaderMaterial).uniforms.uTopMode.value = v
-        ;(slideIn.mesh.material as THREE.ShaderMaterial).uniforms.uTopMode.value = v
-        // Enable depth for 3D cubes when any cube is visible
-        const depthOn = v > 0.01
-        slideOut.setTopMode(depthOn)
-        slideIn.setTopMode(depthOn)
-        // Push slideOut fragments slightly deeper to prevent z-fighting with slideIn
-        const outMat = slideOut.mesh.material as THREE.ShaderMaterial
-        outMat.polygonOffset = v > 0.5
-        outMat.polygonOffsetFactor = 1
-        outMat.polygonOffsetUnits = 1
-        // Smoothly interpolate mesh scale each frame
-        resize()
-      })
+      .onUpdate(() => applyTopModeValue(topProxy.v))
       .onComplete(() => { resize() })
       .start()
   }

@@ -92,6 +92,8 @@ export function ImageCarousel({
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const getLabelRef = useRef(getLabelForIndex)
   getLabelRef.current = getLabelForIndex
+  const isTopModeRef = useRef(isTopMode)
+  isTopModeRef.current = isTopMode
   /**
    * Cache of pre-composited canvases keyed by "url\0title\0subtitle".
    * Avoids re-compositing the same image+label pair on rapid navigation.
@@ -274,6 +276,7 @@ export function ImageCarousel({
     mountedRef.current = true
     const scene = createScene(container)
     sceneRef.current = scene
+    scene.setTopMode(isTopModeRef.current, /* immediate */ true)
 
     const atlasCanvas = getAtlasCanvas()
     const atlasTex = new THREE.Texture(atlasCanvas)
@@ -292,19 +295,25 @@ export function ImageCarousel({
 
     initLoadIdRef.current += 1
     const initLoadId = initLoadIdRef.current
-    const firstUrl = images[0]
-    loadLabeled(firstUrl, 0, (canvas) => {
-      if (!mountedRef.current || initLoadId !== initLoadIdRef.current || !sceneRef.current) return
-      scene.slideOut.setImage(canvas)
-      scene.slideOut.setTime(0)
-      scene.slideOut.mesh.visible = true
-      scene.slideIn.setTime(0)
-      scene.slideIn.mesh.visible = false
-      settledCanvasRef.current = canvas
-      displayedIndexRef.current = 0
+
+    if (isTopModeRef.current) {
+      // In cube/top mode there's no initial image to build on — mark ready immediately.
       isReadyRef.current = true
-      runNextTransitionRef.current()
-    })
+    } else {
+      const firstUrl = images[0]
+      loadLabeled(firstUrl, 0, (canvas) => {
+        if (!mountedRef.current || initLoadId !== initLoadIdRef.current || !sceneRef.current) return
+        scene.slideOut.setImage(canvas)
+        scene.slideOut.setTime(0)
+        scene.slideOut.mesh.visible = true
+        scene.slideIn.setTime(0)
+        scene.slideIn.mesh.visible = false
+        settledCanvasRef.current = canvas
+        displayedIndexRef.current = 0
+        isReadyRef.current = true
+        runNextTransitionRef.current()
+      })
+    }
 
     return () => {
       resizeObserver.disconnect()
@@ -511,7 +520,7 @@ export function ImageCarousel({
   if (!images.length) return null
 
   return (
-    <div className={`relative flex items-center justify-center ${className} h-full`}>
+    <div className={`relative flex items-center justify-center ${className}`}>
       <div ref={tiltWrapRef}>
         <div
           ref={clipRef}

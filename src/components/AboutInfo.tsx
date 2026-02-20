@@ -8,7 +8,7 @@ export const AboutInfo = () => {
 
     return (
         <div className=''>
-            <button className='flex flex-row items-center justify-center gap-1 text-black md:hover:text-gray-400' onClick={() => setIsExpanded(!isExpanded)}>
+            <button className='flex flex-row items-center justify-center gap-1 text-black md:hover:text-gray-500' onClick={() => setIsExpanded(!isExpanded)}>
                 <span className='text-[16px]'>{isExpanded ? 'less' : 'more'}</span>
                 <PiCaretRightBold size={16} className={`transition-transform duration-300 mt-[2px] ${isExpanded ? 'rotate-90' : ''}`} />
             </button>

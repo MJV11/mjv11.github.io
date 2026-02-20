@@ -3,12 +3,14 @@ import { FaGithub, FaLinkedin, FaStrava } from "react-icons/fa";
 import { FiInstagram } from "react-icons/fi";
 
 export const Contact = () => {
+
     return (
-        <div className='flex flex-col flex-1 gap-4 py-16 px-6 h-full justify-center'>
+        <div className='flex flex-col flex-1 gap-4 py-2 px-6 py-6 md:py-0'>
             <p className='text-black font-jost text-[24px] font-medium'>
                 I'm always looking for new opportunities and collaborations. You can contact me via the following channels.
             </p>
-            <div className='flex flex-col gap-4 mt-[200px] md:mt-0 '>
+
+            <div className='flex flex-col gap-1.5 md:gap-4 '>
                 {
                     [
                         {
