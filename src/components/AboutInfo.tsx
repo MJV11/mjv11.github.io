@@ -1,23 +1,22 @@
-import { PiCaretRightBold } from 'react-icons/pi'
+import { PiCaretRightBold, PiXBold } from 'react-icons/pi'
 import { useState } from 'react'
-import { MouseScrollIcon } from '../utils'
+import { createPortal } from 'react-dom'
 
 export const AboutInfo = () => {
     const [isExpanded, setIsExpanded] = useState(false)
-    const percentofheightofwindow = window.innerHeight * 0.8
 
     return (
         <div className=''>
-            <button className='flex flex-row items-center justify-center gap-1 text-black md:hover:text-gray-500' onClick={() => setIsExpanded(!isExpanded)}>
+            <button className='relative flex flex-row items-center justify-center gap-1 text-black md:hover:text-gray-500' onClick={() => setIsExpanded(!isExpanded)}>
                 <span className='text-[16px]'>{isExpanded ? 'less' : 'more'}</span>
                 <PiCaretRightBold size={16} className={`transition-transform duration-300 mt-[2px] ${isExpanded ? 'rotate-90' : ''}`} />
             </button>
-            {isExpanded && (
-                <div className='relative max-w-screen md:w-[1000px] flex flex-row items-start justify-start '>
-                    <div className='relative m-2.5 w-full'>
-                        <div className={`relative p-2.5 flex flex-col gap-10 text-[24px] font-noto-sans text-[#1A4561] rounded bg-white/95 border border-black/10 overflow-y-scroll`} style={{ letterSpacing: '0.05em', height: `${percentofheightofwindow}px` }}>
+            {isExpanded && createPortal(
+                <div className='fixed inset-0 z-[100]'>
+                    <div className='absolute inset-2.5 flex flex-row bg-white border border-black rounded'>
+                        <div className='p-4 flex flex-col gap-10 text-[24px] font-noto-sans text-black overflow-y-auto min-h-0 flex-1' style={{ letterSpacing: '0.05em' }}>
                             <p>
-                                Hello and welcome. I'm Max Vink, a developer and cyclist based in Berkeley, CA.
+                                Hello! I'm Max Vink, a developer and cyclist based in Berkeley, CA.
                                 I graduated from UC Berkeley in 2024 with a B.S. in Computer Science and a B.A. in Political Science.
                                 Since then, I've been working as a software engineer at Silicon, a FinTech startup focused on capital aquisition for
                                 datacenter infrastructure. I also work as a freelance contractor, building software for companies without a dedicated engineering team.
@@ -45,12 +44,12 @@ export const AboutInfo = () => {
                                 As you explore, I hope this website offers insight into my hobbies and abilities, and I hope you enjoy your time here.
                             </p>
                         </div>
+                        <PiXBold onClick={() => setIsExpanded(false)} size={24} className='text-black hover:text-gray-500 m-2.5' />
+
+
                     </div>
-                    <div className='flex flex-col items-center justify-center my-2.5 pt-2.5'>
-                    <MouseScrollIcon />
-                    <span className='text-[11px] font-noto-sans tracking-widest uppercase text-black opacity-50'>scroll</span>
-                    </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     )

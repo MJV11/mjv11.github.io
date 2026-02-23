@@ -569,7 +569,7 @@ export function ImageCarousel({
 
       {/* Navigation hints + page counter — overlaid at the bottom */}
       <div
-        className="absolute bottom-[5px] md:bottom-[28px] left-1/2 -translate-x-1/2 p-[14px] z-10 flex flex-row items-center justify-center transition-opacity duration-300"
+        className="absolute bottom-[5px] md:bottom-[28px] left-1/2 -translate-x-1/2 p-[14px] z-10 flex flex-col gap-2 items-center justify-center transition-opacity duration-300"
         style={{ opacity: disabled ? 0 : 1, pointerEvents: disabled ? 'none' : 'auto' }}
       >
         <div className="flex flex-row items-center gap-3 px-10">
@@ -589,6 +589,12 @@ export function ImageCarousel({
             <span className="text-xs font-noto-sans tracking-wide whitespace-nowrap">mouse scroll</span>
           </div>
         </div>
+        <span className="text-md md:hidden font-jost tracking-wide whitespace-nowrap">
+          tap image for more details
+        </span>
+        <span className="text-md hidden md:block font-jost tracking-wide whitespace-nowrap">
+          click image for more details
+        </span>
       </div>
     </div>
   )

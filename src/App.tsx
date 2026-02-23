@@ -67,7 +67,7 @@ function App() {
               />
             </div>
             <div className="absolute flex flex-col transition-all duration-500 ease-in-out my-16 md:my-0">
-              <div className={`z-30 relative p-[14px] z-20 font-jost text-[24px] font-medium text-black flex flex-col ${isFrontPage ? '' : 'hidden md:flex'}`}>
+              <div className={`z-40 relative p-[14px] font-jost text-[24px] font-medium text-black flex flex-col ${isFrontPage ? '' : 'hidden md:flex'}`}>
                 <span className='md:max-w-[500px]'>Hello, I'm Max Vink. I'm a software engineer and cyclist based in Berkeley, California.</span>
                 <AboutInfo />
               </div>
