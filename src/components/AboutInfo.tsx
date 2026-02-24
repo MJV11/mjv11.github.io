@@ -1,13 +1,25 @@
 import { PiCaretRightBold, PiXBold } from 'react-icons/pi'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
+import { usePostHog } from '@posthog/react'
 
 export const AboutInfo = () => {
     const [isExpanded, setIsExpanded] = useState(false)
+    const posthog = usePostHog()
+
+    const handleToggle = () => {
+        posthog.capture('interaction', { button: isExpanded ? 'about_less' : 'about_more', page: 'root' })
+        setIsExpanded(!isExpanded)
+    }
+
+    const handleClose = () => {
+        posthog.capture('interaction', { button: 'about_close', page: 'root' })
+        setIsExpanded(false)
+    }
 
     return (
         <div className=''>
-            <button className='relative flex flex-row items-center justify-center gap-1 text-black md:hover:text-gray-500' onClick={() => setIsExpanded(!isExpanded)}>
+            <button className='relative flex flex-row items-center justify-center gap-1 text-black md:hover:text-gray-500' onClick={handleToggle}>
                 <span className='text-[16px]'>{isExpanded ? 'less' : 'more'}</span>
                 <PiCaretRightBold size={16} className={`transition-transform duration-300 mt-[2px] ${isExpanded ? 'rotate-90' : ''}`} />
             </button>
@@ -44,7 +56,7 @@ export const AboutInfo = () => {
                                 As you explore, I hope this website offers insight into my hobbies and abilities, and I hope you enjoy your time here.
                             </p>
                         </div>
-                        <PiXBold onClick={() => setIsExpanded(false)} size={24} className='text-black hover:text-gray-500 m-2.5' />
+                        <PiXBold onClick={handleClose} size={24} className='text-black hover:text-gray-500 m-2.5' />
 
 
                     </div>

@@ -2,6 +2,7 @@ import type { Work } from '../data/works'
 import { PiArrowSquareOut, PiCaretLeft } from 'react-icons/pi'
 import { useColor } from '../contexts/ColorContext'
 import { useEffect } from 'react'
+import { usePostHog } from '@posthog/react'
 
 const workImages = import.meta.glob('../assets/images/works/*', { eager: true, import: 'default' }) as Record<string, string>
 
@@ -12,6 +13,7 @@ interface WorkItemProps {
 
 export function WorkItem({ work, onClose }: WorkItemProps) {
   const { setPalette } = useColor()
+  const posthog = usePostHog()
   if (!work) return null
 
   useEffect(() => {
@@ -22,7 +24,8 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
 
   return (
     <div className="flex flex-col gap-6 py-4 px-6 animate-fadeIn w-full md:w-[70%] pt-[10%] md:pt-0 z-10">
-      <button className="flex text-sm font-jost flex-row w-fit gap-4 items-center justify-center bg-white hover:text-white hover:bg-black duration-300 transition-colors border-2 border-black px-2 py-1" onClick={onClose}>
+      <button className="flex text-sm font-jost flex-row w-fit gap-4 items-center justify-center bg-white hover:text-white hover:bg-black duration-300 transition-colors border-2 border-black px-2 py-1" 
+      onClick={() => { posthog.capture('interaction', { button: 'back_to_works', page: 'works', work: work.title }); onClose() }}>
         <PiCaretLeft size={12} />
         <span className='whitespace-nowrap'>back to works</span>
       </button>
@@ -62,12 +65,14 @@ export function WorkItem({ work, onClose }: WorkItemProps) {
       </div>
 
       <div className="flex flex-col gap-2 w-full md:max-w-[450px]">
-        <a className={`text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.site} target="_blank" rel="noopener noreferrer">
+        <a className={`text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.site} target="_blank" rel="noopener noreferrer" 
+        onClick={() => posthog.capture('interaction', { button: 'visit_site', page: 'works', work: work.title })}>
           {work.site ? <div className="flex flex-row gap-2 items-center justify-center">
             <span>visit site</span> <PiArrowSquareOut size={20} /> </div> : <span>site not available</span>}
         </a>
 
-        <a className={`${!work.source ? 'hidden' : ''} text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.source} target="_blank" rel="noopener noreferrer">
+        <a className={`${!work.source ? 'hidden' : ''} text-[16px] font-jost leading-relaxed border-2 px-2 py-3 text-center transition-colors duration-300 ${work.colors.site}`} href={work.source} target="_blank" rel="noopener noreferrer" 
+        onClick={() => posthog.capture('interaction', { button: 'view_code', page: 'works', work: work.title })}>
           <div className="flex flex-row gap-2 items-center justify-center">
             <span>view code</span> <PiArrowSquareOut size={20} />
           </div>

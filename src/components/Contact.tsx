@@ -1,8 +1,10 @@
 import { PiEnvelope, PiArrowSquareOutBold } from 'react-icons/pi'
 import { FaGithub, FaLinkedin, FaStrava } from "react-icons/fa";
 import { FiInstagram } from "react-icons/fi";
+import { usePostHog } from '@posthog/react'
 
 export const Contact = () => {
+    const posthog = usePostHog()
 
     return (
         <div className='flex flex-col flex-1 gap-4 py-2 px-6 py-6 md:py-0'>
@@ -50,7 +52,8 @@ export const Contact = () => {
                             icon: <FiInstagram size={24}  />
                         },
                     ].map((item) => (
-                        <button key={item.title} onClick={() => window.open(item.href, '_blank')} className={`font-jost tracking-widest font-medium text-[16px] px-2 md:px-16 py-4 border-2 flex flex-row items-center justify-start gap-4 md:gap-16 ${item.style}`}>
+                        <button key={item.title} onClick={() => { posthog.capture('interaction', { button: item.title.toLowerCase(), page: 'contact' }); window.open(item.href, '_blank') }} 
+                        className={`font-jost tracking-widest font-medium text-[16px] px-2 md:px-16 py-4 border-2 flex flex-row items-center justify-start gap-4 md:gap-16 ${item.style}`}>
                             {item.icon}
                             <div className='flex flex-row gap-2 items-center'>
                                 <span className='whitespace-nowrap'>{item.title}: {item.value}</span>

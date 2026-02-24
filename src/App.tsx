@@ -4,9 +4,11 @@ import { usePortfolioImagesContext } from './contexts/PortfolioImagesContext'
 import { SECTIONS_WITH_IMAGES } from './config/portfolioImages'
 import { useWorksState } from './hooks/useWorksState'
 import { PiArrowSquareOutBold } from 'react-icons/pi'
+import { usePostHog } from '@posthog/react'
 
 function App() {
   const { currentPage } = useNav()
+  const posthog = usePostHog()
   const { imagesBySection, isReady } = usePortfolioImagesContext()
   const hasCarouselSection = (SECTIONS_WITH_IMAGES as readonly string[]).includes(currentPage)
   const isFrontPage = currentPage === 'root'
@@ -36,6 +38,7 @@ function App() {
       </div>
 
       <a href='https://github.com/mjv11/portfolio2' target='_blank' rel='noopener noreferrer'
+        onClick={() => posthog.capture('interaction', { button: 'source_code', page: currentPage })}
         className={`absolute bottom-0 left-0 m-[14px] px-3 border-2 border-black z-20 flex items-center gap-1.5 text-black hover:bg-black hover:text-white transition-colors ${isMobile && (isContactPage || isExpanded) ? 'hidden md:flex' : 'flex'}`}>
         <span className='font-noto-sans text-[20px]'>src</span>
         <PiArrowSquareOutBold size={16} className='mt-[2px]' />

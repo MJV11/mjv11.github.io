@@ -6,6 +6,7 @@ import { createScene, compositeWithLabel, totalDuration, TRANSITION_DURATION } f
 import { getAtlasCanvas } from '../utils/mosaicPatterns'
 import { DialCounter, ArrowKeysIcon, MouseScrollIcon } from '../utils'
 import { useColor } from '../contexts/ColorContext'
+import { usePostHog } from '@posthog/react'
 
 /** Duration (ms) for the "rush to completion" settle when interrupted mid-transition. */
 const SETTLE_MS = 400
@@ -70,6 +71,8 @@ export function ImageCarousel({
   viewShift = 0,
 }: ImageCarouselProps) {
   const { palette } = useColor()
+  const posthog = usePostHog()
+  const page = sectionId ?? 'root'
   const containerRef = useRef<HTMLDivElement>(null)
   const clipRef = useRef<HTMLDivElement>(null)
   const tiltWrapRef = useRef<HTMLDivElement>(null)
@@ -400,20 +403,24 @@ export function ImageCarousel({
   }, [currentIndex, onIndexChange])
 
   const nextAnim = useCallback(() => {
+    posthog.capture('interaction', { button: 'anim_next', page })
     setCubeAnimMode(m => (m + 1) % CUBE_ANIM_LABELS.length)
-  }, [])
+  }, [page])
 
   const prevAnim = useCallback(() => {
+    posthog.capture('interaction', { button: 'anim_prev', page })
     setCubeAnimMode(m => (m - 1 + CUBE_ANIM_LABELS.length) % CUBE_ANIM_LABELS.length)
-  }, [])
+  }, [page])
 
   const next = useCallback(() => {
+    posthog.capture('interaction', { button: 'carousel_next', page })
     setCurrentIndex((i) => (images.length ? (i + 1) % images.length : 0))
-  }, [images.length])
+  }, [images.length, page])
 
   const prev = useCallback(() => {
+    posthog.capture('interaction', { button: 'carousel_prev', page })
     setCurrentIndex((i) => (images.length ? (i - 1 + images.length) % images.length : 0))
-  }, [images.length])
+  }, [images.length, page])
 
   /** Starts the tilt rAF loop — drives scene rotation uniforms (not CSS). */
   const startTiltLoop = useCallback(() => {
@@ -514,8 +521,10 @@ export function ImageCarousel({
 
   const handleCanvasClick = useCallback(() => {
     if (disabled) return
+    const label = getLabelRef.current?.(currentIndex)
+    posthog.capture('interaction', { button: 'carousel_image_click', page, work: label?.title ?? currentIndex })
     onImageClick?.(currentIndex)
-  }, [currentIndex, onImageClick, disabled])
+  }, [currentIndex, onImageClick, disabled, page])
 
   if (!images.length) return null
 
@@ -556,7 +565,7 @@ export function ImageCarousel({
           <PiCaretDownBold size={18} className={randomMode ? 'text-black/10 cursor-not-allowed' : 'text-black hover:text-gray-400'} />
         </button>
         <button
-          onClick={() => setRandomMode(r => !r)}
+          onClick={() => { posthog.capture('interaction', { button: 'anim_random_toggle', page, random_on: !randomMode }); setRandomMode(r => !r) }}
           className={`mt-1 px-2 py-1 text-[8px] font-noto-sans tracking-[0.15em] uppercase border transition-all duration-300 ${randomMode
               ? 'bg-black text-white border-black hover:bg-gray-400 '
               : 'bg-transparent text-black border-black hover:bg-gray-400 '
