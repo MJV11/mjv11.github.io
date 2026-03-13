@@ -52,6 +52,40 @@ export const works: Work[] = [
     colorContext: ['#f0dcfa', '#fafafa', '#e4e4e4', '#d7e6d5']
   },
   {
+    id: 'compare509',
+    type: ['Web App, Data Visualization'],
+    site: 'compare509.netlify.app',
+    title: 'Compare509',
+    subtitle: 'data visualization for law school disclosures',
+    image: 'compare509.png',
+    role: ['Frontend', 'Design', 'Backend'],
+    tech: ['TypeScript', 'React', 'Tailwind CSS', 'Python', 'FastAPI', 'Pandas'],
+    buzzwords: ['Data Visualization', 'Law'],
+    videos: [],
+    colors: {
+      title: 'bg-red-600 text-white',
+      type: {
+        label: 'text-blue-600',
+        bg: 'bg-blue-600 text-white',
+      },
+      role: {
+        label: 'text-blue-600',
+        bg: 'bg-blue-600 text-white',
+      },
+      tech: {
+        label: 'text-blue-600',
+        bg: 'bg-blue-600 text-white',
+      },
+      buzzwords: {
+        label: 'text-blue-600',
+        bg: 'bg-blue-600 text-white',
+      },
+      site: 'bg-white hover:bg-yellow-300 text-black hover:text-white border-yellow-300',
+      description: 'border-yellow-300',
+    },
+    colorContext: ['#fceae8', '#fafafa', '#ffffff', '#e8effc']
+  },
+  {
     id: 'copytrading',
     type: ['Web App, Script'],
     site: 'copytradingbotsarescams.netlify.app',
