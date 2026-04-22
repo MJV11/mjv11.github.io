@@ -19,10 +19,10 @@ export interface Work {
 export const works: Work[] = [
   {
     id: 'silicon-pool',
-    type: ['Web App'],
+    type: ['Web App, dApp, Website'],
     site: 'silicon.net',
     title: 'Silicon',
-    subtitle: 'cryptocurrency for datacenters',
+    subtitle: 'tokenized compute for the AI economy',
     image: 'silicon.png',
     role: ['Frontend', 'Design', 'Backend'],
     tech: ['TypeScript', 'React', 'Tailwind CSS', 'Solidity', 'PostgreSQL', 'Supabase', 'AWS Lambda', 'Netlify', 'Ethereum'],
@@ -31,30 +31,65 @@ export const works: Work[] = [
     colors: {
       title: 'bg-purple-600 text-white',
       type: {
-        label: 'text-green-600',
-        bg: 'bg-green-600 text-white',
+        label: 'text-purple-600',
+        bg: 'bg-purple-600 text-white',
       },
       role: {
-        label: 'text-green-600',
-        bg: 'bg-green-600 text-white',
+        label: 'text-purple-600',
+        bg: 'bg-purple-600 text-white',
       },
       tech: {
-        label: 'text-green-600',
-        bg: 'bg-green-600 text-white',
+        label: 'text-purple-600',
+        bg: 'bg-purple-600 text-white',
       },
       buzzwords: {
-        label: 'text-green-600',
-        bg: 'bg-green-600 text-white',
+        label: 'text-purple-600',
+        bg: 'bg-purple-600 text-white',
       },
       site: 'bg-white hover:bg-purple-600 text-black hover:text-white border-purple-600',
       description: 'border-purple-600',
     },
-    colorContext: ['#f0dcfa', '#fafafa', '#e4e4e4', '#d7e6d5']
+    colorContext: ['#f0dcfa', '#fafafa', '#fae3f5', '#d4d2d3']
+  },
+  {
+    id: 'chessassist',
+    type: ['Chrome Extension'],
+    source: 'https://github.com/mjv11/chessassist',
+    title: 'Chess Assist',
+    subtitle: 'A chess evaluation and book deployment tool to help intermediate chess players develop intuition for good moves.',
+    image: 'chessassist.jpg',
+    role: ['Frontend', 'Design', 'Backend'],
+    tech: ['TypeScript', 'React', 'Tailwind CSS', 'Python', 'FastAPI', 'Pandas'],
+    buzzwords: ['Chess'],
+    videos: [],
+    colors: {
+      title: 'bg-emerald-600 text-white',
+      type: {
+        label: 'text-emerald-600',
+        bg: 'bg-emerald-600 text-white',
+      },
+      role: {
+        label: 'text-emerald-600',
+        bg: 'bg-emerald-600 text-white',
+      },
+      tech: {
+        label: 'text-emerald-600',
+        bg: 'bg-emerald-600 text-white',
+      },
+      buzzwords: {
+        label: 'text-emerald-600',
+        bg: 'bg-emerald-600 text-white',
+      },
+      site: 'bg-white hover:bg-emerald-600 text-black hover:text-white border-emerald-600',
+      description: 'border-emerald-600',
+    },
+    colorContext: ['#c4dbbd', '#ebeced', '#ffffff', '#e3ecff']
   },
   {
     id: 'compare509',
     type: ['Web App, Data Visualization'],
     site: 'compare509.netlify.app',
+    source: 'https://github.com/mjv11/compare509',
     title: 'Compare509',
     subtitle: 'data visualization for law school disclosures',
     image: 'compare509.png',
