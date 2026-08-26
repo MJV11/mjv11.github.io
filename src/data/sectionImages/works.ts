@@ -7,7 +7,10 @@ import { works } from '../works'
 
 const modules = import.meta.glob<{ default: string }>(
   '../../assets/images/works/*.{jpg,jpeg,png,JPG,JPEG,PNG}',
-  { eager: true },
+  { 
+    eager: true, 
+    query: { format: 'avif;webp;jpg' }
+  },
 )
 
 const byFilename = new Map<string, string>()

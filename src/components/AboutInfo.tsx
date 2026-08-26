@@ -49,7 +49,7 @@ export const AboutInfo = () => {
                                 Part of the purpose of this website is to document those skills and projects. The other purpose is to demonstrate qualities that are
                                 difficult to communicate in a resume, including and especially technical complexity, passion, personality, growth, and aesthetic taste.
                                 Consequently, this website is a work in progress, and I will continue to update it as I learn and grow. To that end, here is a{' '}
-                                <a href='https://mjv11.github.io/' target='_blank' rel='noopener noreferrer' className='hover:underline mouse-pointer'><span className='text-[#E6B389]'>link to my first portfolio</span></a>,
+                                <a href='https://mjv11.github.io/portfolio1' target='_blank' rel='noopener noreferrer' className='hover:underline mouse-pointer'><span className='text-[#E6B389]'>link to my first portfolio</span></a>,
                                 which I built in 2023 in vanilla JS and HTML, and so decided not to update but instead remake from scratch in React here.
                             </p>
                             <p>

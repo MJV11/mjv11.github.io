@@ -52,6 +52,40 @@ export const works: Work[] = [
     colorContext: ['#f0dcfa', '#fafafa', '#fae3f5', '#d4d2d3']
   },
   {
+    id: 'reverseengineerIVR',
+    type: ['Data Visualization'],
+    source: 'https://github.com/mjv11/reverseengineerIVR',
+    title: 'Reverse Engineering IVR',
+    subtitle: 'Using Bland to reverse IVR trees.',
+    image: 'ivr.png',
+    role: ['Frontend', 'Design', 'Backend'],
+    tech: ['TypeScript', 'React', 'Tailwind CSS', 'Python', 'Bland'],
+    buzzwords: ['Data Visualization', 'IVR', 'Telecom'],
+    videos: [],
+    colors: {
+      title: 'bg-[#d84522] text-white',
+      type: {
+        label: 'text-[#d84522]',
+        bg: 'bg-[#d84522] text-white',
+      },
+      role: {
+        label: 'text-[#d84522]',
+        bg: 'bg-[#d84522] text-white',
+      },
+      tech: {
+        label: 'text-[#d84522]',
+        bg: 'bg-[#d84522] text-white',
+      },
+      buzzwords: {
+        label: 'text-[#d84522]',
+        bg: 'bg-[#d84522] text-white',
+      },
+      site: 'bg-white hover:bg-[#d84522] text-black hover:text-white border-[#d84522]',
+      description: 'border-[#d84522]',
+    },
+    colorContext: ['#f4c2b8', '#fcf1f0', '#ffffff', '#f8dad2']
+  },
+  {
     id: 'chessassist',
     type: ['Chrome Extension'],
     source: 'https://github.com/mjv11/chessassist',
@@ -158,8 +192,8 @@ export const works: Work[] = [
   {
     id: 'old-portfolio',
     type: ['Website'],
-    site: 'https://mjv11.github.io',
-    source: 'https://github.com/mjv11/mjv11.github.io',
+    site: 'https://mjv11.github.io/portfolio1',
+    source: 'https://github.com/mjv11/portfolio1',
     title: 'Portfolio v1',
     subtitle: 'undergrad work',
     image: 'oldportfolio.png',
